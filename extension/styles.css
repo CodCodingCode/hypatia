@@ -1,0 +1,1015 @@
+/* =============================================================================
+   HYPATIA ONBOARDING STYLES
+   ============================================================================= */
+
+/* =============================================================================
+   SIGN-IN BUTTON (Top Right Header)
+   ============================================================================= */
+
+.hypatia-signin-btn {
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.hypatia-header-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #4285f4;
+  color: white;
+  border: none;
+  border-radius: 16px;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.hypatia-header-btn:hover {
+  background: #3367d6;
+  box-shadow: 0 2px 8px rgba(66, 133, 244, 0.4);
+}
+
+.hypatia-header-btn svg {
+  stroke: white;
+}
+
+.hypatia-header-btn.hypatia-btn-complete {
+  background: #e6f4ea;
+  color: #137333;
+}
+
+.hypatia-header-btn.hypatia-btn-complete:hover {
+  background: #ceead6;
+  box-shadow: none;
+}
+
+/* Floating button fallback */
+.hypatia-floating-btn-container {
+  position: fixed !important;
+  top: 16px !important;
+  right: 80px !important;
+  z-index: 2147483647 !important; /* Max z-index to stay on top of Gmail */
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.hypatia-floating-btn {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  background: #4285f4 !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 16px !important;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.hypatia-floating-btn:hover {
+  background: #3367d6;
+  box-shadow: 0 4px 12px rgba(66, 133, 244, 0.4);
+  transform: translateY(-1px);
+}
+
+.hypatia-floating-btn svg {
+  stroke: white;
+}
+
+/* =============================================================================
+   OVERLAY & PANEL (Slide-in from right)
+   ============================================================================= */
+
+#hypatia-onboarding-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#hypatia-onboarding-container.hypatia-visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.hypatia-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Panel content container - centered with max width */
+.hypatia-panel-content {
+  width: 100%;
+  max-width: 500px;
+  padding: 32px;
+}
+
+/* Full-width layout for campaigns view */
+.hypatia-panel-content.hypatia-fullwidth {
+  max-width: 100%;
+  padding: 32px 48px;
+}
+
+.hypatia-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+  color: #5f6368;
+}
+
+.hypatia-close-btn:hover {
+  background: #f1f3f4;
+}
+
+/* =============================================================================
+   STEP CONTENT
+   ============================================================================= */
+
+.hypatia-step {
+  text-align: center;
+}
+
+/* Logo */
+.hypatia-logo {
+  margin-bottom: 20px;
+}
+
+/* Typography */
+.hypatia-title {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 24px;
+  font-weight: 500;
+  color: #202124;
+  margin: 0 0 8px 0;
+  line-height: 1.3;
+}
+
+.hypatia-subtitle {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: #5f6368;
+  margin: 0 0 24px 0;
+  line-height: 1.5;
+}
+
+.hypatia-subtitle strong {
+  color: #202124;
+}
+
+/* Explanation section */
+.hypatia-explanation {
+  text-align: left;
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.hypatia-explanation h3 {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #202124;
+  margin: 0 0 8px 0;
+}
+
+.hypatia-explanation > p {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  color: #5f6368;
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+}
+
+/* Features list */
+.hypatia-features {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hypatia-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.hypatia-feature-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  background: #e8f0fe;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4285f4;
+}
+
+.hypatia-feature-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hypatia-feature-text strong {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.hypatia-feature-text span {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #5f6368;
+  line-height: 1.4;
+}
+
+/* Buttons */
+.hypatia-btn {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 12px 28px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.hypatia-btn-primary {
+  background: #4285f4;
+  color: #ffffff;
+  width: 100%;
+}
+
+.hypatia-btn-primary:hover {
+  background: #3367d6;
+  box-shadow: 0 2px 8px rgba(66, 133, 244, 0.4);
+}
+
+.hypatia-btn-secondary {
+  background: transparent;
+  color: #5f6368;
+  border: 1px solid #dadce0;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.hypatia-btn-secondary:hover {
+  background: #f8f9fa;
+  border-color: #5f6368;
+}
+
+/* Privacy note */
+.hypatia-privacy-note {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 11px;
+  color: #80868b;
+  margin-top: 16px;
+  line-height: 1.5;
+}
+
+.hypatia-link {
+  color: #4285f4;
+  text-decoration: none;
+}
+
+.hypatia-link:hover {
+  text-decoration: underline;
+}
+
+/* =============================================================================
+   PROGRESS STEP
+   ============================================================================= */
+
+.hypatia-spinner-container {
+  margin-bottom: 20px;
+}
+
+.hypatia-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e8eaed;
+  border-top-color: #4285f4;
+  border-radius: 50%;
+  animation: hypatia-spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes hypatia-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hypatia-progress-container {
+  margin: 24px 0;
+}
+
+.hypatia-progress-bar {
+  height: 6px;
+  background: #e8eaed;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hypatia-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4285f4, #34a853);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.hypatia-progress-text {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  color: #5f6368;
+  margin-top: 8px;
+}
+
+.hypatia-hint {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #80868b;
+  margin-top: 16px;
+}
+
+/* =============================================================================
+   COMPLETE STEP
+   ============================================================================= */
+
+.hypatia-success-icon {
+  margin-bottom: 20px;
+}
+
+.hypatia-success-icon svg {
+  animation: hypatia-checkmark 0.5s ease-out;
+}
+
+@keyframes hypatia-checkmark {
+  0% {
+    transform: scale(0);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.hypatia-complete-info {
+  background: #e6f4ea;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 20px 0;
+}
+
+.hypatia-complete-info p {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  color: #137333;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* =============================================================================
+   ERROR STEP
+   ============================================================================= */
+
+.hypatia-error-icon {
+  margin-bottom: 20px;
+}
+
+.hypatia-error-message {
+  color: #c5221f !important;
+  background: #fce8e6;
+  padding: 12px 16px;
+  border-radius: 8px;
+  display: inline-block;
+  font-size: 13px !important;
+}
+
+/* =============================================================================
+   RESPONSIVE
+   ============================================================================= */
+
+@media (max-width: 480px) {
+  .hypatia-panel-content {
+    padding: 60px 20px 20px;
+  }
+
+  .hypatia-floating-btn span {
+    display: none;
+  }
+
+  .hypatia-floating-btn {
+    padding: 12px;
+    border-radius: 50%;
+  }
+}
+
+/* =============================================================================
+   ANIMATED PROGRESS BAR (Clustering phase)
+   ============================================================================= */
+
+.hypatia-progress-animated {
+  background: linear-gradient(
+    90deg,
+    #4285f4 0%,
+    #34a853 25%,
+    #fbbc04 50%,
+    #ea4335 75%,
+    #4285f4 100%
+  );
+  background-size: 200% 100%;
+  animation: hypatia-gradient-shift 2s ease infinite;
+}
+
+@keyframes hypatia-gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+#hypatia-clustering-progress {
+  margin: 24px 0;
+}
+
+#hypatia-clustering-hint {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  color: #5f6368;
+  margin-top: 12px;
+  transition: opacity 0.3s ease;
+  min-height: 20px;
+}
+
+/* =============================================================================
+   CAMPAIGNS GRID
+   ============================================================================= */
+
+/* Header with title and Add Campaign button */
+.hypatia-campaigns-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.hypatia-campaigns-header-left {
+  flex: 1;
+}
+
+.hypatia-campaigns-header .hypatia-title {
+  margin-bottom: 4px;
+}
+
+.hypatia-campaigns-header .hypatia-subtitle {
+  margin: 0;
+}
+
+.hypatia-btn-add-campaign {
+  background: #4285f4;
+  color: white;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+}
+
+.hypatia-btn-add-campaign:hover {
+  background: #3367d6;
+  box-shadow: 0 2px 8px rgba(66, 133, 244, 0.3);
+}
+
+/* Grid layout for campaign cards */
+.hypatia-campaigns-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 20px 0;
+}
+
+/* Individual campaign card */
+.hypatia-campaign-card {
+  border: 1px solid #e8eaed;
+  border-radius: 12px;
+  padding: 16px;
+  background: white;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  text-align: left;
+}
+
+.hypatia-campaign-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.hypatia-campaign-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.hypatia-campaign-card-title {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #202124;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.hypatia-campaign-card-recipient {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #5f6368;
+  margin-bottom: 8px;
+}
+
+.hypatia-campaign-count {
+  background: #4285f4;
+  color: white;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.hypatia-campaign-similarity {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 11px;
+  color: #34a853;
+  background: #e6f4ea;
+  padding: 4px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.hypatia-more-campaigns {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #80868b;
+  margin: 12px 0;
+  text-align: center;
+}
+
+/* Done button in campaigns view - constrain width */
+.hypatia-campaigns .hypatia-btn-primary {
+  width: auto;
+  min-width: 120px;
+  margin: 20px auto 0;
+  display: block;
+}
+
+.hypatia-no-campaigns {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: #5f6368;
+  padding: 40px 20px;
+  text-align: center;
+  grid-column: 1 / -1;
+}
+
+/* Campaign Analysis Rows */
+.hypatia-campaign-analysis {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f3f4;
+}
+
+.hypatia-campaign-analysis-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hypatia-analysis-icon {
+  color: #5f6368;
+  font-weight: 500;
+  flex-shrink: 0;
+  min-width: 36px;
+}
+
+.hypatia-analysis-text {
+  color: #3c4043;
+  flex: 1;
+  word-wrap: break-word;
+}
+
+/* Urgency badges */
+.hypatia-urgency-low {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  margin-left: 4px;
+}
+
+.hypatia-urgency-medium {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #fff3e0;
+  color: #ef6c00;
+  margin-left: 4px;
+}
+
+.hypatia-urgency-high {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #ffebee;
+  color: #c62828;
+  margin-left: 4px;
+}
+
+/* Legacy list styles (kept for backwards compatibility) */
+.hypatia-campaigns-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 20px 0;
+  border: 1px solid #e8eaed;
+  border-radius: 12px;
+}
+
+.hypatia-campaign-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e8eaed;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.hypatia-campaign-item:last-child {
+  border-bottom: none;
+}
+
+.hypatia-campaign-item:hover {
+  background: #f8f9fa;
+}
+
+.hypatia-campaign-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.hypatia-campaign-subject {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #202124;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hypatia-campaign-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 40px;
+}
+
+.hypatia-campaign-recipient {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #5f6368;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =============================================================================
+   QUESTIONNAIRE STYLES
+   ============================================================================= */
+
+.hypatia-questionnaire {
+  text-align: left;
+}
+
+.hypatia-questionnaire .hypatia-title {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+/* Progress bar for questions */
+.hypatia-questionnaire-progress {
+  margin-bottom: 24px;
+}
+
+.hypatia-questionnaire-progress-bar {
+  height: 4px;
+  background: #e8eaed;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hypatia-questionnaire-progress-fill {
+  height: 100%;
+  background: #4285f4;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.hypatia-questionnaire-progress-text {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #80868b;
+  display: block;
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* Input styles */
+.hypatia-input,
+.hypatia-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: #202124;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+}
+
+.hypatia-input:focus,
+.hypatia-textarea:focus {
+  outline: none;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+}
+
+.hypatia-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* Name confirmation */
+.hypatia-name-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hypatia-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: #5f6368;
+}
+
+.hypatia-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #4285f4;
+}
+
+/* Radio/Select options */
+.hypatia-select-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hypatia-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: #202124;
+}
+
+.hypatia-radio-label:hover {
+  background: #f8f9fa;
+  border-color: #4285f4;
+}
+
+.hypatia-radio-label.selected {
+  background: #e8f0fe;
+  border-color: #4285f4;
+}
+
+.hypatia-radio-label input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #4285f4;
+}
+
+/* Question content area */
+.hypatia-question-content {
+  margin: 24px 0;
+}
+
+/* Button container for questionnaire */
+.hypatia-questionnaire-buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.hypatia-questionnaire-buttons .hypatia-btn-secondary {
+  flex: 0 0 auto;
+  width: auto;
+  margin-top: 0;
+}
+
+.hypatia-questionnaire-buttons .hypatia-btn-primary {
+  flex: 1;
+}
+
+/* Skip button */
+.hypatia-btn-skip {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px;
+  background: none;
+  border: none;
+  color: #80868b;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.hypatia-btn-skip:hover {
+  color: #5f6368;
+  text-decoration: underline;
+}
+
+/* Validation error */
+.hypatia-validation-error {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #fce8e6;
+  border-radius: 4px;
+  color: #c5221f;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  animation: hypatia-shake 0.3s ease;
+}
+
+@keyframes hypatia-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* Backend status indicator */
+.hypatia-backend-status {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid #e8eaed;
+}
+
+.hypatia-backend-processing,
+.hypatia-backend-complete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.hypatia-backend-complete {
+  color: #137333;
+}
+
+.hypatia-mini-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #e8eaed;
+  border-top-color: #4285f4;
+  border-radius: 50%;
+  animation: hypatia-spin 1s linear infinite;
+}
+
+/* =============================================================================
+   WAITING STEP STYLES
+   ============================================================================= */
+
+.hypatia-waiting {
+  text-align: center;
+}
+
+.hypatia-waiting-animation {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 32px 0;
+}
+
+.hypatia-pulse-dot {
+  width: 12px;
+  height: 12px;
+  background: #4285f4;
+  border-radius: 50%;
+  animation: hypatia-pulse 1.4s ease-in-out infinite;
+}
+
+.hypatia-pulse-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.hypatia-pulse-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes hypatia-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+}
