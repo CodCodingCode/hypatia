@@ -317,10 +317,47 @@ async function analyzeUserCampaigns(userId) {
 }
 
 async function fetchUserCampaigns(userId) {
+  // Fetch campaigns with related analysis data (CTA, style, contacts) using Supabase joins
   const campaigns = await supabaseRequest(
-    `campaigns?user_id=eq.${userId}&select=*&order=email_count.desc`,
+    `campaigns?user_id=eq.${userId}&select=*,campaign_ctas(*),campaign_email_styles(*),campaign_contacts(*)&order=email_count.desc`,
     'GET'
   );
+
+  // Flatten the nested analysis data for easier access in the frontend
+  if (campaigns && campaigns.length > 0) {
+    // Fetch emails for each campaign in parallel
+    const campaignsWithEmails = await Promise.all(campaigns.map(async (campaign) => {
+      const cta = campaign.campaign_ctas?.[0] || campaign.campaign_ctas || {};
+      const style = campaign.campaign_email_styles?.[0] || campaign.campaign_email_styles || {};
+      const contact = campaign.campaign_contacts?.[0] || campaign.campaign_contacts || {};
+
+      // Fetch emails for this campaign
+      const emails = await fetchCampaignEmails(campaign.id);
+
+      return {
+        ...campaign,
+        // CTA fields
+        cta_type: cta.cta_type || campaign.cta_type,
+        cta_description: cta.cta_description || campaign.cta_description,
+        cta_text: cta.cta_text || campaign.cta_text,
+        cta_urgency: cta.urgency || campaign.cta_urgency,
+        // Style fields
+        style_description: style.one_sentence_description || campaign.style_description,
+        style_prompt: style.style_analysis_prompt || campaign.style_prompt,
+        // Contact fields
+        contact_description: contact.contact_description || campaign.contact_description,
+        // Emails for this campaign
+        emails: emails || [],
+        // Remove nested objects to keep payload clean
+        campaign_ctas: undefined,
+        campaign_email_styles: undefined,
+        campaign_contacts: undefined
+      };
+    }));
+
+    return campaignsWithEmails;
+  }
+
   return campaigns || [];
 }
 
@@ -378,7 +415,115 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     markOnboardingComplete(request.userId).then(() => sendResponse({ success: true }));
     return true;
   }
+
+  if (request.action === 'updateCampaign') {
+    updateCampaignFields(request.campaignId, request.fields).then(sendResponse);
+    return true;
+  }
+
+  // Followup system handlers
+  if (request.action === 'createFollowupPlan') {
+    handleCreateFollowupPlan(request.userId, request.campaignId, request.emails)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getFollowupStatus') {
+    handleGetFollowupStatus(request.userId).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'cancelFollowup') {
+    handleCancelFollowup(request.followupId).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'syncGmailToken') {
+    syncGmailTokenToBackend(request.userId).then(success => sendResponse({ success }));
+    return true;
+  }
+
+  if (request.action === 'setupGmailWatch') {
+    setupGmailWatch(request.userId, request.topicName).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'signOut') {
+    handleSignOut().then(sendResponse);
+    return true;
+  }
 });
+
+// =============================================================================
+// SIGN OUT HANDLER
+// Clears all OAuth tokens and local storage for fresh re-authentication
+// =============================================================================
+
+async function handleSignOut() {
+  try {
+    // Step 1: Get current token before clearing (non-interactive)
+    let token = null;
+    try {
+      token = await new Promise((resolve, reject) => {
+        chrome.identity.getAuthToken({ interactive: false }, (t) => {
+          if (chrome.runtime.lastError) {
+            resolve(null); // No token cached, that's fine
+          } else {
+            resolve(t);
+          }
+        });
+      });
+    } catch (e) {
+      console.log('[Hypatia] No cached token found during sign out');
+    }
+
+    // Step 2: Remove cached auth token from Chrome identity
+    if (token) {
+      await new Promise((resolve) => {
+        chrome.identity.removeCachedAuthToken({ token }, () => {
+          console.log('[Hypatia] Removed cached auth token');
+          resolve();
+        });
+      });
+
+      // Step 3: Revoke token with Google (prevents token reuse)
+      try {
+        await fetch(`https://accounts.google.com/o/oauth2/revoke?token=${token}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        });
+        console.log('[Hypatia] Token revoked with Google');
+      } catch (revokeError) {
+        // Non-fatal: token removal still succeeded
+        console.warn('[Hypatia] Token revocation failed (non-fatal):', revokeError.message);
+      }
+    }
+
+    // Step 4: Clear all chrome.storage.local data
+    await chrome.storage.local.remove([
+      'onboardingComplete',
+      'userEmail',
+      'userId',
+      'hypatia_sidebar_collapsed'
+    ]);
+    console.log('[Hypatia] Cleared local storage');
+
+    // Step 5: Clear all cached auth tokens completely (forces re-auth on next sign in)
+    await new Promise((resolve) => {
+      chrome.identity.clearAllCachedAuthTokens(() => {
+        console.log('[Hypatia] Cleared all cached auth tokens');
+        resolve();
+      });
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Hypatia] Sign out error:', error);
+    return { success: false, error: error.message };
+  }
+}
 
 async function handleQuestionnaireSubmission(userId, answers) {
   try {
@@ -395,6 +540,69 @@ async function handleGetCampaigns(userId) {
     const campaigns = await fetchUserCampaigns(userId);
     return { success: true, campaigns };
   } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function updateCampaignFields(campaignId, fields) {
+  /**
+   * Update campaign CTA and/or contact description in Supabase.
+   * fields can contain: cta_description, contact_description
+   */
+  try {
+    // Update CTA description if provided
+    if (fields.cta_description !== undefined) {
+      // Check if campaign_ctas entry exists
+      const existingCta = await supabaseRequest(
+        `campaign_ctas?campaign_id=eq.${campaignId}&select=id`,
+        'GET'
+      );
+
+      if (existingCta && existingCta.length > 0) {
+        // Update existing
+        await supabaseRequest(
+          `campaign_ctas?campaign_id=eq.${campaignId}`,
+          'PATCH',
+          { cta_description: fields.cta_description }
+        );
+      } else {
+        // Insert new
+        await supabaseRequest(
+          'campaign_ctas',
+          'POST',
+          { campaign_id: campaignId, cta_description: fields.cta_description }
+        );
+      }
+    }
+
+    // Update contact description if provided
+    if (fields.contact_description !== undefined) {
+      // Check if campaign_contacts entry exists
+      const existingContact = await supabaseRequest(
+        `campaign_contacts?campaign_id=eq.${campaignId}&select=id`,
+        'GET'
+      );
+
+      if (existingContact && existingContact.length > 0) {
+        // Update existing
+        await supabaseRequest(
+          `campaign_contacts?campaign_id=eq.${campaignId}`,
+          'PATCH',
+          { contact_description: fields.contact_description }
+        );
+      } else {
+        // Insert new
+        await supabaseRequest(
+          'campaign_contacts',
+          'POST',
+          { campaign_id: campaignId, contact_description: fields.contact_description }
+        );
+      }
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to update campaign fields:', error);
     return { success: false, error: error.message };
   }
 }
@@ -417,6 +625,12 @@ async function handleOnboarding(tabId) {
     // Step 3: Create/get user in Supabase
     sendProgressToTab(tabId, { step: 'setup', message: 'Setting up your account...' });
     const user = await getOrCreateUser(userInfo.email, userInfo.googleId);
+
+    // Step 3.5: Sync Gmail token to backend for followup system
+    // This runs in background, doesn't block onboarding
+    syncGmailTokenToBackend(user.id).catch(err => {
+      console.warn('Initial token sync failed (non-fatal):', err.message);
+    });
 
     // Step 4: Send signal to start questionnaire AND begin backend processing in parallel
     sendProgressToTab(tabId, {
@@ -559,9 +773,143 @@ function sendProgressToTab(tabId, data) {
 }
 
 async function checkOnboardingStatus() {
-  const data = await chrome.storage.local.get(['onboardingComplete', 'userEmail']);
+  const data = await chrome.storage.local.get(['onboardingComplete', 'userEmail', 'userId']);
   return {
     complete: data.onboardingComplete || false,
-    email: data.userEmail || null
+    email: data.userEmail || null,
+    userId: data.userId || null
   };
+}
+
+// =============================================================================
+// GMAIL TOKEN RELAY FOR FOLLOWUP SYSTEM
+// Syncs OAuth tokens to backend for server-side email sending
+// =============================================================================
+
+async function syncGmailTokenToBackend(userId) {
+  /**
+   * Push Gmail OAuth token to backend for followup sending.
+   * Called after initial auth and periodically to refresh.
+   */
+  try {
+    const token = await getAuthToken();
+
+    // Chrome doesn't expose exact expiration, so we set a conservative 55 min
+    const expiresAt = new Date(Date.now() + 55 * 60 * 1000).toISOString();
+
+    const response = await fetch(`${CONFIG.API_URL}/users/${userId}/gmail-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        access_token: token,
+        expires_at: expiresAt
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('Failed to sync Gmail token:', error);
+      return false;
+    }
+
+    console.log('Gmail token synced to backend');
+    return true;
+  } catch (error) {
+    console.error('Failed to sync Gmail token:', error);
+    return false;
+  }
+}
+
+async function setupGmailWatch(userId, topicName) {
+  /**
+   * Set up Gmail push notifications for reply detection.
+   * topicName should be the full Pub/Sub topic path.
+   */
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/users/${userId}/gmail-watch?topic_name=${encodeURIComponent(topicName)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('Failed to set up Gmail watch:', error);
+      return { success: false, error };
+    }
+
+    const result = await response.json();
+    console.log('Gmail watch set up successfully:', result);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('Failed to set up Gmail watch:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Set up periodic token refresh (every 45 minutes)
+// This ensures the backend always has a valid token for sending followups
+setInterval(async () => {
+  const data = await chrome.storage.local.get(['userId']);
+  if (data.userId) {
+    await syncGmailTokenToBackend(data.userId);
+  }
+}, 45 * 60 * 1000);
+
+// =============================================================================
+// FOLLOWUP API HANDLERS
+// =============================================================================
+
+async function handleCreateFollowupPlan(userId, campaignId, emails) {
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/followups/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        campaign_id: campaignId,
+        emails: emails
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`API error: ${error}`);
+    }
+
+    return { success: true, data: await response.json() };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleGetFollowupStatus(userId) {
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/followups/pending/${userId}`);
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`API error: ${error}`);
+    }
+
+    return { success: true, data: await response.json() };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleCancelFollowup(followupId) {
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/followups/${followupId}/cancel`, {
+      method: 'POST'
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`API error: ${error}`);
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }

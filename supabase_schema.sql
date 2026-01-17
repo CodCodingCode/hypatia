@@ -470,3 +470,263 @@ CREATE POLICY "Allow inserting campaign_contacts" ON campaign_contacts
 
 CREATE POLICY "Allow updating campaign_contacts" ON campaign_contacts
   FOR UPDATE USING (true);
+
+-- =============================================================================
+-- FOLLOWUP SYSTEM TABLES
+-- Added for AI-personalized follow-up sequences with Gmail integration
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- GMAIL TOKENS TABLE
+-- Stores OAuth tokens relayed from Chrome extension for backend email sending
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS gmail_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL UNIQUE,
+
+  -- Token data
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  token_type TEXT DEFAULT 'Bearer',
+  expires_at TIMESTAMPTZ NOT NULL,
+
+  -- Gmail watch info for Pub/Sub reply detection
+  history_id TEXT,
+  watch_expiration TIMESTAMPTZ,
+
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_gmail_tokens_user_id ON gmail_tokens(user_id);
+
+-- Enable RLS
+ALTER TABLE gmail_tokens ENABLE ROW LEVEL SECURITY;
+
+-- Policies for gmail_tokens
+DROP POLICY IF EXISTS "Allow reading gmail_tokens" ON gmail_tokens;
+DROP POLICY IF EXISTS "Allow inserting gmail_tokens" ON gmail_tokens;
+DROP POLICY IF EXISTS "Allow updating gmail_tokens" ON gmail_tokens;
+
+CREATE POLICY "Allow reading gmail_tokens" ON gmail_tokens
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow inserting gmail_tokens" ON gmail_tokens
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow updating gmail_tokens" ON gmail_tokens
+  FOR UPDATE USING (true);
+
+-- -----------------------------------------------------------------------------
+-- FOLLOWUP CONFIGS TABLE
+-- Stores configurable follow-up timing per campaign
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS followup_configs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID REFERENCES campaigns(id) ON DELETE CASCADE NOT NULL UNIQUE,
+
+  -- Configurable timing (in days after initial email)
+  followup_1_days INTEGER DEFAULT 3,
+  followup_2_days INTEGER DEFAULT 7,
+  followup_3_days INTEGER DEFAULT 14,
+
+  -- Feature flags
+  enabled BOOLEAN DEFAULT true,
+  max_followups INTEGER DEFAULT 3,
+
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_followup_configs_campaign_id ON followup_configs(campaign_id);
+
+-- Enable RLS
+ALTER TABLE followup_configs ENABLE ROW LEVEL SECURITY;
+
+-- Policies for followup_configs
+DROP POLICY IF EXISTS "Allow reading followup_configs" ON followup_configs;
+DROP POLICY IF EXISTS "Allow inserting followup_configs" ON followup_configs;
+DROP POLICY IF EXISTS "Allow updating followup_configs" ON followup_configs;
+
+CREATE POLICY "Allow reading followup_configs" ON followup_configs
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow inserting followup_configs" ON followup_configs
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow updating followup_configs" ON followup_configs
+  FOR UPDATE USING (true);
+
+-- -----------------------------------------------------------------------------
+-- SCHEDULED FOLLOWUPS TABLE
+-- Stores AI-generated follow-up emails with scheduling and status tracking
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS scheduled_followups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- References
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  campaign_id UUID REFERENCES campaigns(id) ON DELETE SET NULL,
+  original_email_id UUID REFERENCES sent_emails(id) ON DELETE CASCADE,
+  thread_id TEXT NOT NULL,  -- Gmail thread ID for reply detection
+
+  -- Recipient info (denormalized for efficiency)
+  recipient_email TEXT NOT NULL,
+  recipient_name TEXT,
+
+  -- Followup content (AI-generated)
+  sequence_number INTEGER NOT NULL,  -- 1, 2, 3 for day 3, 7, 14
+  followup_type TEXT NOT NULL,  -- 'gentle_reminder', 'add_value', 'final_attempt'
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+
+  -- Scheduling
+  scheduled_for TIMESTAMPTZ NOT NULL,
+
+  -- Status tracking
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending, sent, cancelled, skipped
+  status_reason TEXT,  -- e.g., 'reply_detected', 'manual_cancel', 'send_error'
+
+  -- Execution info
+  sent_at TIMESTAMPTZ,
+  gmail_message_id TEXT,  -- ID of sent followup for tracking
+  error_message TEXT,
+
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Unique constraint: one followup per sequence per original email
+  UNIQUE(original_email_id, sequence_number)
+);
+
+-- Indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_scheduled_followups_status_scheduled
+  ON scheduled_followups(status, scheduled_for)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_scheduled_followups_thread_id ON scheduled_followups(thread_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_followups_user_id ON scheduled_followups(user_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_followups_campaign_id ON scheduled_followups(campaign_id);
+
+-- Enable RLS
+ALTER TABLE scheduled_followups ENABLE ROW LEVEL SECURITY;
+
+-- Policies for scheduled_followups
+DROP POLICY IF EXISTS "Allow reading scheduled_followups" ON scheduled_followups;
+DROP POLICY IF EXISTS "Allow inserting scheduled_followups" ON scheduled_followups;
+DROP POLICY IF EXISTS "Allow updating scheduled_followups" ON scheduled_followups;
+DROP POLICY IF EXISTS "Allow deleting scheduled_followups" ON scheduled_followups;
+
+CREATE POLICY "Allow reading scheduled_followups" ON scheduled_followups
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow inserting scheduled_followups" ON scheduled_followups
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow updating scheduled_followups" ON scheduled_followups
+  FOR UPDATE USING (true);
+
+CREATE POLICY "Allow deleting scheduled_followups" ON scheduled_followups
+  FOR DELETE USING (true);
+
+-- -----------------------------------------------------------------------------
+-- ADD COLUMNS TO SENT_EMAILS FOR FOLLOWUP TRACKING
+-- -----------------------------------------------------------------------------
+DO $$
+BEGIN
+  -- Track when a reply was detected
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sent_emails' AND column_name = 'reply_detected_at') THEN
+    ALTER TABLE sent_emails ADD COLUMN reply_detected_at TIMESTAMPTZ;
+  END IF;
+
+  -- Store the Gmail ID of the reply
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sent_emails' AND column_name = 'reply_gmail_id') THEN
+    ALTER TABLE sent_emails ADD COLUMN reply_gmail_id TEXT;
+  END IF;
+
+  -- Flag if this email is a followup (vs original outreach)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sent_emails' AND column_name = 'is_followup') THEN
+    ALTER TABLE sent_emails ADD COLUMN is_followup BOOLEAN DEFAULT false;
+  END IF;
+
+  -- Link to parent email if this is a followup
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sent_emails' AND column_name = 'parent_email_id') THEN
+    ALTER TABLE sent_emails ADD COLUMN parent_email_id UUID REFERENCES sent_emails(id);
+  END IF;
+END $$;
+
+-- -----------------------------------------------------------------------------
+-- HELPER FUNCTION: Update timestamp on followup modification
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION update_followup_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for scheduled_followups
+DROP TRIGGER IF EXISTS trigger_update_followup_timestamp ON scheduled_followups;
+CREATE TRIGGER trigger_update_followup_timestamp
+  BEFORE UPDATE ON scheduled_followups
+  FOR EACH ROW
+  EXECUTE FUNCTION update_followup_timestamp();
+
+-- Trigger for gmail_tokens
+DROP TRIGGER IF EXISTS trigger_update_gmail_token_timestamp ON gmail_tokens;
+CREATE TRIGGER trigger_update_gmail_token_timestamp
+  BEFORE UPDATE ON gmail_tokens
+  FOR EACH ROW
+  EXECUTE FUNCTION update_followup_timestamp();
+
+-- Trigger for followup_configs
+DROP TRIGGER IF EXISTS trigger_update_followup_config_timestamp ON followup_configs;
+CREATE TRIGGER trigger_update_followup_config_timestamp
+  BEFORE UPDATE ON followup_configs
+  FOR EACH ROW
+  EXECUTE FUNCTION update_followup_timestamp();
+
+-- -----------------------------------------------------------------------------
+-- VIEW: Pending followups with campaign info
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE VIEW pending_followups_view AS
+SELECT
+  sf.id,
+  sf.user_id,
+  sf.campaign_id,
+  sf.original_email_id,
+  sf.thread_id,
+  sf.recipient_email,
+  sf.recipient_name,
+  sf.sequence_number,
+  sf.followup_type,
+  sf.subject,
+  sf.body,
+  sf.scheduled_for,
+  sf.status,
+  c.representative_subject AS campaign_subject,
+  c.campaign_number
+FROM scheduled_followups sf
+LEFT JOIN campaigns c ON sf.campaign_id = c.id
+WHERE sf.status = 'pending'
+ORDER BY sf.scheduled_for ASC;
+
+-- -----------------------------------------------------------------------------
+-- VIEW: Followup statistics per user
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE VIEW user_followup_stats AS
+SELECT
+  user_id,
+  COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
+  COUNT(*) FILTER (WHERE status = 'sent') AS sent_count,
+  COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled_count,
+  COUNT(*) FILTER (WHERE status = 'skipped') AS skipped_count,
+  COUNT(*) AS total_count,
+  MIN(scheduled_for) FILTER (WHERE status = 'pending') AS next_scheduled
+FROM scheduled_followups
+GROUP BY user_id;

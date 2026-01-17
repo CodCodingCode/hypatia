@@ -1,6 +1,7 @@
 # Secrets - never commit these
 extension/config.js
 .env
+secrets/
 
 # Python
 __pycache__/

@@ -1,0 +1,15 @@
+To: example@company.com
+Subject: AI Pod: New Era in Patient Histories
+
+Hi Dr. Contact {last_name}!
+
+I’m Nathan, 17, building an AI pod to see if AI can revolutionize history intake.
+
+We’ve engaged AMIE authors on AI's role in patient questioning. Our goal is to equip LLMs with tools for clinician-level histories.
+
+I noticed your work on {specific project/interest}. Harvard and JHU back us with GPU access.
+
+I’d love your insight on exam devices and spinning our research into a paper. Please book here: [calendly link].
+
+Thanks,  
+Nathan Yan

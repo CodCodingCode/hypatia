@@ -64,10 +64,9 @@ MAX_ENRICHMENTS_PER_CAMPAIGN = 3
 API_RATE_LIMIT_DELAY = 0.5  # seconds between API calls
 CONSECUTIVE_FAILURES_THRESHOLD = 5
 
-# Backboard client
+# Backboard config
 BACKBOARD_API_KEY = "espr_QZsqo8OoayLiWToFyYpoUwMryKjpGDwgjZbNHwO7zF0"
-backboard_client = None  # Will be initialized async
-GPT_MODEL = "gpt-4o"
+GPT_MODEL = "google/gemini-3-flash-preview"
 
 # Campaign filtering
 MIN_CAMPAIGN_SIZE = 2
@@ -506,13 +505,13 @@ def build_enrichment_profiles_text(enrichments: list[EnrichmentResult]) -> str:
     return "\n".join(profiles_summary) if profiles_summary else "No enriched profile data available."
 
 
-def analyze_campaign_combined(
+async def analyze_campaign_combined_async(
     emails: list[dict],
     enrichments: list[EnrichmentResult],
     user_context: dict
 ) -> dict:
     """
-    Use OpenAI to analyze emails and extract CTA, style, and contact description
+    Use Backboard to analyze emails and extract CTA, style, and contact description
     in a single API call.
 
     Returns a dict with 'cta', 'style', and 'contact' sections.
@@ -539,7 +538,9 @@ def analyze_campaign_combined(
     app_purpose = user_context.get("app_purpose", "unknown")
     contact_types = user_context.get("contact_types", "unknown")
 
-    prompt = f"""Analyze these emails from the same sender and return a JSON object with three sections.
+    prompt = f"""You are an expert email analyst. Always respond with valid JSON only, no markdown formatting.
+
+Analyze these emails from the same sender and return a JSON object with three sections.
 
 === EMAILS FROM THIS CAMPAIGN ===
 {emails_content}
@@ -581,15 +582,27 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
 
     for attempt in range(max_retries):
         try:
-            response = openai_client.chat.completions.create(
-                model=GPT_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=2500,
-                response_format={"type": "json_object"},
+            # Create a fresh client for each call to avoid event loop issues
+            client = BackboardClient(api_key=BACKBOARD_API_KEY)
+
+            # Create an assistant for this analysis
+            assistant = await client.create_assistant(
+                name="Email Campaign Analyzer"
             )
 
-            result_text = response.choices[0].message.content.strip()
+            # Create a thread
+            thread = await client.create_thread(assistant.assistant_id)
+
+            # Send message and get response
+            response = await client.add_message(
+                thread_id=thread.thread_id,
+                content=prompt,
+                llm_provider="openrouter",
+                model_name=GPT_MODEL,
+                stream=False
+            )
+
+            result_text = response.content.strip()
 
             # Clean up potential markdown code blocks
             if result_text.startswith("```"):
@@ -627,10 +640,10 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
             last_error = e
             if attempt >= max_retries - 1:
                 break
-            print(f"    GPT error (attempt {attempt + 1}): {e}, retrying...")
+            print(f"    Backboard error (attempt {attempt + 1}): {e}, retrying...")
             continue
 
-    print(f"    GPT error after {max_retries} attempts: {last_error}")
+    print(f"    Backboard error after {max_retries} attempts: {last_error}")
     return {
         "cta": {
             "cta_type": "Error",
@@ -646,6 +659,15 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
             "contact_description": f"Error: {str(last_error)}",
         },
     }
+
+
+def analyze_campaign_combined(
+    emails: list[dict],
+    enrichments: list[EnrichmentResult],
+    user_context: dict
+) -> dict:
+    """Synchronous wrapper for analyze_campaign_combined_async."""
+    return asyncio.run(analyze_campaign_combined_async(emails, enrichments, user_context))
 
 
 # =============================================================================

@@ -25,6 +25,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from learn_user_combined import analyze_single_campaign_combined
 
+# Import followup system from hypatia_agent
+from hypatia_agent.services.followup_service import FollowupService
+from hypatia_agent.services.gmail_service import GmailService, TokenExpiredError, GmailAPIError
+from hypatia_agent.services.supabase_client import SupabaseClient as AgentSupabaseClient
+from hypatia_agent.agents.followup_agent import FollowupAgent
+
 
 # =============================================================================
 # CONFIGURATION
@@ -106,6 +112,26 @@ class EmailBatch(BaseModel):
 
 class ClusterRequest(BaseModel):
     user_id: str
+
+
+class CreateFollowupPlanRequest(BaseModel):
+    user_id: str
+    campaign_id: str
+    emails: list[dict]
+
+
+class FollowupConfigUpdate(BaseModel):
+    followup_1_days: Optional[int] = None
+    followup_2_days: Optional[int] = None
+    followup_3_days: Optional[int] = None
+    max_followups: Optional[int] = None
+    enabled: Optional[bool] = None
+
+
+class GmailTokenUpdate(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    expires_at: str
 
 
 # =============================================================================
@@ -554,6 +580,174 @@ async def analyze_user_campaigns(request: ClusterRequest):
         "campaigns": analyzed_campaigns,
         "analyzed": len(analyzed_campaigns)
     }
+
+
+# -----------------------------------------------------------------------------
+# FOLLOWUP ENDPOINTS
+# -----------------------------------------------------------------------------
+
+@app.post("/followups/plan")
+async def create_followup_plan(request: CreateFollowupPlanRequest):
+    """
+    Generate and schedule AI-personalized follow-up plans.
+
+    1. Fetches campaign style and CTA from database
+    2. Uses FollowupAgent to generate personalized content
+    3. Saves scheduled_followups to database
+
+    Returns: List of created followup schedules
+    """
+    # Initialize services
+    agent_supabase = AgentSupabaseClient()
+    followup_agent = FollowupAgent(agent_supabase)
+
+    # Fetch campaign data for style and CTA
+    cta_data = supabase_request(
+        f"campaign_ctas?campaign_id=eq.{request.campaign_id}&select=cta_description"
+    )
+    style_data = supabase_request(
+        f"campaign_email_styles?campaign_id=eq.{request.campaign_id}&select=style_analysis_prompt"
+    )
+
+    cta = cta_data[0].get("cta_description", "") if cta_data else ""
+    style_prompt = style_data[0].get("style_analysis_prompt", "") if style_data else ""
+
+    # Get enrichments for recipients
+    recipient_emails = [e.get("to") or e.get("recipient_to", "") for e in request.emails]
+    enrichments_data = supabase_request(
+        f"contact_enrichments?user_id=eq.{request.user_id}&success=eq.true&select=email,raw_json"
+    ) or []
+
+    enrichments = {e["email"]: e for e in enrichments_data if e.get("email") in recipient_emails}
+
+    # Generate and persist followup plans
+    result = await followup_agent.plan_with_persistence(
+        user_id=request.user_id,
+        emails=request.emails,
+        cta=cta,
+        style_prompt=style_prompt,
+        enrichments=enrichments,
+        campaign_id=request.campaign_id,
+    )
+
+    return {
+        "plans": result["plans"],
+        "scheduled_count": len(result["scheduled"]),
+        "scheduled": result["scheduled"],
+    }
+
+
+@app.get("/followups/{user_id}")
+async def get_user_followups(user_id: str, status: Optional[str] = None, limit: int = 100):
+    """Get all followups for a user, optionally filtered by status."""
+    agent_supabase = AgentSupabaseClient()
+    followup_service = FollowupService(agent_supabase)
+
+    followups = followup_service.get_user_followups(user_id, status=status, limit=limit)
+
+    return {
+        "followups": followups,
+        "count": len(followups),
+    }
+
+
+@app.get("/followups/pending/{user_id}")
+async def get_pending_followups(user_id: str, limit: int = 50):
+    """Get upcoming scheduled followups for a user."""
+    agent_supabase = AgentSupabaseClient()
+    followup_service = FollowupService(agent_supabase)
+
+    followups = followup_service.get_pending_followups(user_id, limit=limit)
+    stats = followup_service.get_followup_stats(user_id)
+
+    return {
+        "followups": followups,
+        "count": len(followups),
+        "stats": stats,
+    }
+
+
+@app.post("/followups/{followup_id}/cancel")
+async def cancel_followup(followup_id: str, reason: str = "manual_cancel"):
+    """Manually cancel a pending followup."""
+    agent_supabase = AgentSupabaseClient()
+    followup_service = FollowupService(agent_supabase)
+
+    success = followup_service.cancel_followup(followup_id, reason=reason)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Followup not found or already processed")
+
+    return {"success": True, "followup_id": followup_id, "status": "cancelled"}
+
+
+@app.patch("/campaigns/{campaign_id}/followup-config")
+async def update_followup_config(campaign_id: str, config: FollowupConfigUpdate):
+    """Update followup timing configuration for a campaign."""
+    agent_supabase = AgentSupabaseClient()
+    followup_service = FollowupService(agent_supabase)
+
+    config_dict = config.model_dump(exclude_none=True)
+    if not config_dict:
+        raise HTTPException(status_code=400, detail="No configuration fields provided")
+
+    result = followup_service.update_followup_config(campaign_id, config_dict)
+
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to update configuration")
+
+    return {"success": True, "config": result}
+
+
+# -----------------------------------------------------------------------------
+# GMAIL TOKEN ENDPOINTS
+# -----------------------------------------------------------------------------
+
+@app.post("/users/{user_id}/gmail-token")
+async def update_gmail_token(user_id: str, token: GmailTokenUpdate):
+    """
+    Store/update Gmail OAuth tokens for a user.
+    Called by extension when tokens are refreshed.
+    """
+    agent_supabase = AgentSupabaseClient()
+    gmail_service = GmailService(agent_supabase)
+
+    result = gmail_service.store_gmail_token(
+        user_id=user_id,
+        access_token=token.access_token,
+        expires_at=token.expires_at,
+        refresh_token=token.refresh_token,
+    )
+
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to store Gmail token")
+
+    return {"success": True, "user_id": user_id}
+
+
+@app.post("/users/{user_id}/gmail-watch")
+async def setup_gmail_watch(user_id: str, topic_name: str):
+    """
+    Set up Gmail push notifications via Pub/Sub for a user.
+    Should be called after initial authentication.
+
+    Args:
+        topic_name: Full Pub/Sub topic name (e.g., projects/my-project/topics/gmail-notifications)
+    """
+    agent_supabase = AgentSupabaseClient()
+    gmail_service = GmailService(agent_supabase)
+
+    try:
+        result = gmail_service.setup_watch(user_id, topic_name)
+        return {
+            "success": True,
+            "history_id": result.get("history_id"),
+            "expiration": result.get("expiration"),
+        }
+    except TokenExpiredError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except GmailAPIError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 # =============================================================================
