@@ -1,15 +1,157 @@
-To: example@company.com
-Subject: AI Pod: New Era in Patient Histories
+To: drrhoffman@frontiernet.net
+Subject: AI Nurse - Need Your Expertise?
 
-Hi Dr. Contact {last_name}!
+Hi Dr. {last_name}!
 
-I’m Nathan, 17, building an AI pod to see if AI can revolutionize history intake.
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
 
-We’ve engaged AMIE authors on AI's role in patient questioning. Our goal is to equip LLMs with tools for clinician-level histories.
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
 
-I noticed your work on {specific project/interest}. Harvard and JHU back us with GPU access.
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
 
-I’d love your insight on exam devices and spinning our research into a paper. Please book here: [calendly link].
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: jay.lombard@genomind.com
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
+
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: jyoutsos@gmail.com
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
+
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: mserota@mdintegrations.com
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
+
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: blakely@westgateskin.com
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
+
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: rdbjrmd@hotmail.com
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
+
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: parimalkala@yahoo.com
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
+
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: jgruen@optonline.net
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
+
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: mikecarchia2001@yahoo.com
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
+
+Thanks,  
+Nathan Yan
+
+============================================================
+
+To: zlivanov@yahoo.com
+Subject: AI Nurse - Need Your Expertise?
+
+Hi Dr. {last_name}!
+
+I’m Nathan, a 17-year-old exploring AI's potential in patient history intake. Your work on {specific research/work} inspired me.
+
+We're tapping into LLMs to handle patient history. Collaborating with Harvard and JHU for GPU access.
+
+I'd love your advice on integrating key devices for physical exams. Could we schedule a 30-minute meeting? Please pick a time that suits you here: [Calendly link].
 
 Thanks,  
 Nathan Yan

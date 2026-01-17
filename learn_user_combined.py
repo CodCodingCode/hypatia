@@ -24,7 +24,7 @@ from typing import Optional
 from pathlib import Path
 
 import asyncio
-from backboard import BackboardClient
+from openai import AsyncOpenAI
 
 
 # =============================================================================
@@ -64,9 +64,10 @@ MAX_ENRICHMENTS_PER_CAMPAIGN = 3
 API_RATE_LIMIT_DELAY = 0.5  # seconds between API calls
 CONSECUTIVE_FAILURES_THRESHOLD = 5
 
-# Backboard config
-BACKBOARD_API_KEY = "espr_QZsqo8OoayLiWToFyYpoUwMryKjpGDwgjZbNHwO7zF0"
-GPT_MODEL = "google/gemini-3-flash-preview"
+# OpenRouter config
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+GPT_MODEL = "google/gemini-2.0-flash-001"
 
 # Campaign filtering
 MIN_CAMPAIGN_SIZE = 2
@@ -580,29 +581,39 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
     max_retries = 2
     last_error = None
 
+    # Debug: Check API key at startup
+    print(f"\n{'='*60}")
+    print("OPENROUTER DEBUG INFO")
+    print(f"{'='*60}")
+    print(f"  API Key configured: {'Yes' if OPENROUTER_API_KEY else 'NO - MISSING!'}")
+    if OPENROUTER_API_KEY:
+        print(f"  API Key prefix: {OPENROUTER_API_KEY[:15]}...")
+        print(f"  API Key length: {len(OPENROUTER_API_KEY)} chars")
+    print(f"  Model: {GPT_MODEL}")
+    print(f"  Base URL: {OPENROUTER_BASE_URL}")
+    print(f"{'='*60}\n")
+
+    # Create OpenRouter client (OpenAI-compatible)
+    client = AsyncOpenAI(
+        api_key=OPENROUTER_API_KEY,
+        base_url=OPENROUTER_BASE_URL,
+    )
+
     for attempt in range(max_retries):
+        print(f"  [Attempt {attempt + 1}/{max_retries}] Sending request to OpenRouter...")
         try:
-            # Create a fresh client for each call to avoid event loop issues
-            client = BackboardClient(api_key=BACKBOARD_API_KEY)
-
-            # Create an assistant for this analysis
-            assistant = await client.create_assistant(
-                name="Email Campaign Analyzer"
+            response = await client.chat.completions.create(
+                model=GPT_MODEL,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
             )
+            print(f"  [Attempt {attempt + 1}/{max_retries}] Response received!")
 
-            # Create a thread
-            thread = await client.create_thread(assistant.assistant_id)
-
-            # Send message and get response
-            response = await client.add_message(
-                thread_id=thread.thread_id,
-                content=prompt,
-                llm_provider="openrouter",
-                model_name=GPT_MODEL,
-                stream=False
-            )
-
-            result_text = response.content.strip()
+            result_text = response.choices[0].message.content.strip()
+            print(f"  [Attempt {attempt + 1}/{max_retries}] Response length: {len(result_text)} chars")
+            print(f"  [Attempt {attempt + 1}/{max_retries}] Response starts with: {result_text[:100]}...")
 
             # Clean up potential markdown code blocks
             if result_text.startswith("```"):
@@ -612,19 +623,23 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
             result_text = result_text.strip()
 
             try:
-                return json.loads(result_text)
+                parsed = json.loads(result_text)
+                print(f"  [Attempt {attempt + 1}/{max_retries}] JSON parsed successfully!")
+                return parsed
             except json.JSONDecodeError as je:
                 # Try to extract JSON object if there's extra content
                 json_match = re.search(r'\{[\s\S]*\}', result_text)
                 if json_match:
                     try:
-                        return json.loads(json_match.group())
+                        parsed = json.loads(json_match.group())
+                        print(f"  [Attempt {attempt + 1}/{max_retries}] JSON extracted and parsed successfully!")
+                        return parsed
                     except json.JSONDecodeError:
                         pass
 
                 # Log the problematic response for debugging
                 print(f"    JSON parse error (attempt {attempt + 1}): {je}")
-                print(f"    Response preview: {result_text[:200]}...")
+                print(f"    Full response text:\n{'-'*40}\n{result_text}\n{'-'*40}")
                 last_error = je
 
                 if attempt < max_retries - 1:
@@ -638,12 +653,16 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
             continue
         except Exception as e:
             last_error = e
+            print(f"    [Attempt {attempt + 1}/{max_retries}] EXCEPTION: {type(e).__name__}: {e}")
             if attempt >= max_retries - 1:
                 break
-            print(f"    Backboard error (attempt {attempt + 1}): {e}, retrying...")
+            print(f"    Retrying...")
             continue
 
-    print(f"    Backboard error after {max_retries} attempts: {last_error}")
+    print(f"\n{'='*60}")
+    print(f"OPENROUTER FAILED after {max_retries} attempts")
+    print(f"Last error: {type(last_error).__name__}: {last_error}")
+    print(f"{'='*60}\n")
     return {
         "cta": {
             "cta_type": "Error",

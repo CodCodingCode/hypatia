@@ -4,6 +4,7 @@ FastAPI server for handling email storage and campaign clustering
 """
 
 import os
+import re
 import json
 import urllib.request
 import urllib.error
@@ -12,13 +13,30 @@ from typing import Optional
 from difflib import SequenceMatcher
 from pathlib import Path
 
+# UUID validation pattern
+UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+
+def is_valid_uuid(value: str) -> bool:
+    """Check if a string is a valid UUID format."""
+    return bool(UUID_PATTERN.match(value))
+
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from parallel_clustering import identify_campaigns_parallel
-from async_supabase import AsyncSupabaseClient, save_campaigns_parallel
+from async_supabase import (
+    AsyncSupabaseClient,
+    save_campaigns_parallel,
+    save_generated_leads,
+    save_generated_template,
+    save_generated_cadence,
+    get_generated_leads,
+    get_generated_template,
+    get_generated_cadence,
+    update_cadence_email,
+)
 
 # Import learning modules from parent directory
 import sys
@@ -30,6 +48,9 @@ from hypatia_agent.services.followup_service import FollowupService
 from hypatia_agent.services.gmail_service import GmailService, TokenExpiredError, GmailAPIError
 from hypatia_agent.services.supabase_client import SupabaseClient as AgentSupabaseClient
 from hypatia_agent.agents.followup_agent import FollowupAgent
+from hypatia_agent.agents.people_finder_agent import PeopleFinderAgent
+from hypatia_agent.agents.debate.orchestrator import DebateOrchestrator
+from hypatia_agent.services.llm_client import LLMClient
 
 
 # =============================================================================
@@ -51,6 +72,7 @@ load_env()
 
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '')
 SIMILARITY_THRESHOLD = 0.60
 
 # Global async Supabase client
@@ -65,7 +87,8 @@ async_supabase_client: Optional[AsyncSupabaseClient] = None
 async def lifespan(app: FastAPI):
     """Manage async Supabase client lifecycle."""
     global async_supabase_client
-    async_supabase_client = AsyncSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    # Use service role key to bypass RLS for backend operations
+    async_supabase_client = AsyncSupabaseClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     yield
     if async_supabase_client:
         await async_supabase_client.close()
@@ -134,20 +157,67 @@ class GmailTokenUpdate(BaseModel):
     expires_at: str
 
 
+class LeadGenerateRequest(BaseModel):
+    user_id: str
+    campaign_id: Optional[str] = None
+    query: str
+    limit: int = 20
+
+
+class TemplateGenerateRequest(BaseModel):
+    user_id: str
+    campaign_id: str
+    cta: str
+    style_prompt: str
+    sample_emails: list = []
+    current_subject: Optional[str] = None
+    current_body: Optional[str] = None
+
+
+class CadenceGenerateRequest(BaseModel):
+    user_id: str
+    campaign_id: str
+    style_prompt: str = ""
+    sample_emails: list = []
+    day_1: int = 1
+    day_2: int = 3
+    day_3: int = 7
+    day_4: int = 14
+
+
+class CadenceEmailUpdate(BaseModel):
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    day_number: Optional[int] = None
+
+
+class EmailToSend(BaseModel):
+    recipient_email: str
+    recipient_name: str
+    subject: str
+    body: str
+
+
+class SendBatchRequest(BaseModel):
+    user_id: str
+    campaign_id: str
+    emails: list[EmailToSend]
+
+
 # =============================================================================
 # SUPABASE HELPERS
 # =============================================================================
 
 def supabase_request(endpoint: str, method: str = 'GET', body=None):
     """Make a request to Supabase REST API."""
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise HTTPException(status_code=500, detail="Supabase not configured")
 
     url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
 
     headers = {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': f"Bearer {SUPABASE_ANON_KEY}",
+        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
     }
@@ -398,6 +468,98 @@ async def get_user_emails(user_id: str, limit: int = 100):
         'GET'
     )
     return {"emails": result or [], "count": len(result) if result else 0}
+
+
+@app.post("/emails/send-batch")
+async def send_email_batch(request: SendBatchRequest):
+    """
+    Send a batch of emails via Gmail API.
+
+    Sends each email sequentially, stores results, and returns detailed status.
+    """
+    if not request.emails:
+        return {"total": 0, "sent": 0, "failed": 0, "results": []}
+
+    # Initialize Gmail service
+    agent_supabase = AgentSupabaseClient()
+    gmail_service = GmailService(agent_supabase)
+
+    results = []
+
+    for email in request.emails:
+        try:
+            # Send via Gmail API
+            result = gmail_service.send_email(
+                user_id=request.user_id,
+                to=email.recipient_email,
+                subject=email.subject,
+                body=email.body
+            )
+
+            # Store in sent_emails table
+            sent_email_data = {
+                'user_id': request.user_id,
+                'gmail_id': result.get('gmail_id'),
+                'thread_id': result.get('thread_id'),
+                'subject': email.subject,
+                'recipient_to': email.recipient_email,
+                'body': email.body,
+                'sent_at': 'now()'
+            }
+
+            try:
+                supabase_request('sent_emails', 'POST', sent_email_data)
+            except HTTPException:
+                # Continue even if storage fails - email was already sent
+                pass
+
+            results.append({
+                "recipient_email": email.recipient_email,
+                "recipient_name": email.recipient_name,
+                "success": True,
+                "gmail_id": result.get('gmail_id'),
+                "thread_id": result.get('thread_id'),
+                "error": None
+            })
+
+        except TokenExpiredError as e:
+            # Token expired - this is a critical error, return immediately
+            raise HTTPException(
+                status_code=401,
+                detail=f"Gmail token expired. Please re-authenticate. Error: {str(e)}"
+            )
+
+        except GmailAPIError as e:
+            # Gmail API error for this specific email - log and continue
+            results.append({
+                "recipient_email": email.recipient_email,
+                "recipient_name": email.recipient_name,
+                "success": False,
+                "gmail_id": None,
+                "thread_id": None,
+                "error": str(e)
+            })
+
+        except Exception as e:
+            # Unexpected error - log and continue
+            results.append({
+                "recipient_email": email.recipient_email,
+                "recipient_name": email.recipient_name,
+                "success": False,
+                "gmail_id": None,
+                "thread_id": None,
+                "error": f"Unexpected error: {str(e)}"
+            })
+
+    sent_count = sum(1 for r in results if r["success"])
+    failed_count = sum(1 for r in results if not r["success"])
+
+    return {
+        "total": len(request.emails),
+        "sent": sent_count,
+        "failed": failed_count,
+        "results": results
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -697,6 +859,346 @@ async def update_followup_config(campaign_id: str, config: FollowupConfigUpdate)
         raise HTTPException(status_code=500, detail="Failed to update configuration")
 
     return {"success": True, "config": result}
+
+
+# -----------------------------------------------------------------------------
+# LEAD GENERATION ENDPOINTS
+# -----------------------------------------------------------------------------
+
+@app.post("/leads/generate")
+async def generate_leads(request: LeadGenerateRequest):
+    """
+    Generate leads using PeopleFinderAgent.
+
+    Takes a natural language query describing the target contacts
+    and returns matching leads from Aviato API or Clado AI.
+    Saves generated leads to Supabase for later retrieval.
+    """
+    print(f"[LeadGen] Generating leads for user {request.user_id}")
+    print(f"[LeadGen] Query: {request.query}")
+    print(f"[LeadGen] Limit: {request.limit}")
+
+    # Initialize the PeopleFinderAgent
+    agent_supabase = AgentSupabaseClient()
+    people_finder = PeopleFinderAgent(agent_supabase)
+
+    try:
+        # Call the find method with the natural language query
+        contacts = await people_finder.find(
+            user_id=request.user_id,
+            target_description=request.query,
+        )
+
+        # Limit results if we got more than requested
+        if len(contacts) > request.limit:
+            contacts = contacts[:request.limit]
+
+        print(f"[LeadGen] Found {len(contacts)} contacts")
+
+        # Save generated leads to Supabase
+        save_result = await save_generated_leads(
+            client=async_supabase_client,
+            user_id=request.user_id,
+            campaign_id=request.campaign_id,
+            query=request.query,
+            leads=contacts,
+        )
+        print(f"[LeadGen] Saved {save_result['leads_saved']} leads to Supabase")
+
+        return {
+            "leads": contacts,
+            "count": len(contacts),
+            "saved": save_result,
+        }
+
+    except Exception as e:
+        print(f"[LeadGen] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Lead generation failed: {str(e)}")
+
+
+# -----------------------------------------------------------------------------
+# TEMPLATE GENERATION ENDPOINTS
+# -----------------------------------------------------------------------------
+
+@app.post("/templates/generate")
+async def generate_template(request: TemplateGenerateRequest):
+    """
+    Generate an email template using the DebateOrchestrator.
+
+    Runs a multi-agent debate (Style, CTA, BestPractice) to create
+    an optimized email template with placeholders.
+    Saves generated template to Supabase for later retrieval.
+    """
+    print(f"[TemplateGen] Generating template for campaign {request.campaign_id}")
+    print(f"[TemplateGen] CTA: {request.cta[:100]}..." if len(request.cta) > 100 else f"[TemplateGen] CTA: {request.cta}")
+
+    # Initialize the DebateOrchestrator
+    llm_client = LLMClient()
+    orchestrator = DebateOrchestrator(llm_client)
+
+    try:
+        # Build style prompt, incorporating current template if provided
+        style_prompt = request.style_prompt
+        if request.current_subject or request.current_body:
+            style_prompt += f"\n\nThe user has a current draft they want to improve:\n"
+            if request.current_subject:
+                style_prompt += f"CURRENT SUBJECT: {request.current_subject}\n"
+            if request.current_body:
+                style_prompt += f"CURRENT BODY:\n{request.current_body}\n"
+            style_prompt += "\nUse this as inspiration but improve upon it."
+
+        # Run the debate to generate the template
+        template = await orchestrator.run_debate(
+            cta=request.cta,
+            style_prompt=style_prompt,
+            sample_emails=request.sample_emails,
+            max_rounds=2,
+            verbose=True,
+        )
+
+        print(f"[TemplateGen] Generated template: {template.subject}")
+
+        template_dict = {
+            "subject": template.subject,
+            "body": template.body,
+            "placeholders": template.placeholders,
+        }
+
+        # Save generated template to Supabase (only if campaign has a real UUID)
+        # Temporary campaign IDs start with "new_" and can't be saved to DB
+        save_result = {"template_saved": False, "skipped": "temporary campaign ID"}
+        if not request.campaign_id.startswith("new_"):
+            save_result = await save_generated_template(
+                client=async_supabase_client,
+                user_id=request.user_id,
+                campaign_id=request.campaign_id,
+                template=template_dict,
+                cta=request.cta,
+                style_prompt=request.style_prompt,
+            )
+            print(f"[TemplateGen] Saved template to Supabase: {save_result}")
+        else:
+            print(f"[TemplateGen] Skipping save - campaign '{request.campaign_id}' is temporary (not yet created)")
+
+        return {
+            "template": template_dict,
+            "saved": save_result,
+        }
+
+    except Exception as e:
+        print(f"[TemplateGen] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Template generation failed: {str(e)}")
+
+
+# -----------------------------------------------------------------------------
+# CADENCE GENERATION ENDPOINTS
+# -----------------------------------------------------------------------------
+
+@app.post("/cadence/generate")
+async def generate_cadence(request: CadenceGenerateRequest):
+    """
+    Generate a complete email cadence (initial + 3 follow-ups) using FollowupAgent.
+
+    Returns 4 emails with configurable day timing that users can customize.
+    """
+    print(f"[CadenceGen] Generating cadence for campaign {request.campaign_id}")
+
+    agent_supabase = AgentSupabaseClient()
+    followup_agent = FollowupAgent(agent_supabase)
+
+    try:
+        # Generate cadence using enhanced FollowupAgent
+        cadence = await followup_agent.generate_full_cadence(
+            user_id=request.user_id,
+            campaign_id=request.campaign_id,
+            style_prompt=request.style_prompt,
+            sample_emails=request.sample_emails,
+            timing={
+                'initial': request.day_1,
+                'followup_1': request.day_2,
+                'followup_2': request.day_3,
+                'followup_3': request.day_4,
+            }
+        )
+
+        print(f"[CadenceGen] Generated {len(cadence)} emails")
+
+        # Save to database
+        save_result = await save_generated_cadence(
+            client=async_supabase_client,
+            user_id=request.user_id,
+            campaign_id=request.campaign_id,
+            cadence_emails=cadence,
+        )
+        print(f"[CadenceGen] Saved cadence to Supabase: {save_result}")
+
+        # Fetch saved cadence to get IDs
+        saved_cadence = await get_generated_cadence(async_supabase_client, request.campaign_id)
+
+        return {"cadence": saved_cadence, "saved": save_result}
+
+    except Exception as e:
+        print(f"[CadenceGen] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Cadence generation failed: {str(e)}")
+
+
+@app.get("/cadence/{campaign_id}")
+async def get_cadence(campaign_id: str):
+    """Retrieve saved email cadence for a campaign."""
+    cadence = await get_generated_cadence(async_supabase_client, campaign_id)
+    return {"cadence": cadence}
+
+
+@app.patch("/cadence/{cadence_id}")
+async def update_cadence(cadence_id: str, update: CadenceEmailUpdate):
+    """Update a single email in the cadence (timing, subject, or body)."""
+    updates = update.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No update fields provided")
+
+    result = await update_cadence_email(async_supabase_client, cadence_id, updates)
+    if not result:
+        raise HTTPException(status_code=404, detail="Cadence email not found")
+
+    return {"success": True, "updated": result}
+
+
+@app.post("/cadence/{cadence_id}/regenerate")
+async def regenerate_cadence_email(cadence_id: str, user_id: str):
+    """Regenerate a single email in the cadence using AI."""
+    # Get existing cadence email (verify it belongs to this user)
+    existing = await async_supabase_client.request(
+        f"generated_cadence?id=eq.{cadence_id}&user_id=eq.{user_id}&select=*", 'GET'
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Cadence email not found")
+
+    email_data = existing[0]
+
+    agent_supabase = AgentSupabaseClient()
+    followup_agent = FollowupAgent(agent_supabase)
+
+    # Regenerate this specific email
+    new_content = await followup_agent.regenerate_single_email(
+        email_type=email_data['email_type'],
+        campaign_id=email_data['campaign_id'],
+        tone_guidance=email_data.get('tone_guidance', ''),
+    )
+
+    # Update in database
+    await async_supabase_client.request(
+        f"generated_cadence?id=eq.{cadence_id}",
+        'PATCH',
+        {'subject': new_content['subject'], 'body': new_content['body']}
+    )
+
+    return {"success": True, "email": {**email_data, **new_content}}
+
+
+# -----------------------------------------------------------------------------
+# SAVED AI CONTENT RETRIEVAL ENDPOINTS
+# -----------------------------------------------------------------------------
+
+@app.get("/leads/{user_id}")
+async def get_leads(user_id: str, campaign_id: Optional[str] = None):
+    """
+    Retrieve saved generated leads for a user.
+    Optionally filter by campaign_id.
+    """
+    # Validate user_id is a valid UUID (reject "null" or invalid strings)
+    if not is_valid_uuid(user_id):
+        return {"leads": [], "count": 0, "error": "Invalid user_id"}
+
+    leads = await get_generated_leads(
+        client=async_supabase_client,
+        user_id=user_id,
+        campaign_id=campaign_id,
+    )
+    return {"leads": leads, "count": len(leads)}
+
+
+@app.get("/templates/{campaign_id}")
+async def get_template(campaign_id: str):
+    """
+    Retrieve saved generated template for a campaign.
+    """
+    template = await get_generated_template(
+        client=async_supabase_client,
+        campaign_id=campaign_id,
+    )
+    if not template:
+        return {"template": None}
+
+    return {
+        "template": {
+            "subject": template.get('subject', ''),
+            "body": template.get('body', ''),
+            "placeholders": template.get('placeholders', []),
+            "cta_used": template.get('cta_used', ''),
+            "created_at": template.get('created_at', ''),
+        }
+    }
+
+
+@app.get("/templates/user/{user_id}")
+async def get_user_templates(user_id: str):
+    """
+    Retrieve all saved generated templates for a user.
+    Returns templates with their associated campaign_id for grouping.
+    """
+    # Validate user_id is a valid UUID (reject "null" or invalid strings)
+    if not is_valid_uuid(user_id):
+        return {"templates": [], "count": 0, "error": "Invalid user_id"}
+
+    try:
+        result = await async_supabase_client.request(
+            f"generated_templates?user_id=eq.{user_id}&order=created_at.desc",
+            'GET'
+        )
+        templates = result or []
+        return {
+            "templates": [
+                {
+                    "id": t.get('id'),
+                    "campaign_id": t.get('campaign_id'),
+                    "subject": t.get('subject', ''),
+                    "body": t.get('body', ''),
+                    "placeholders": t.get('placeholders', []),
+                    "cta_used": t.get('cta_used', ''),
+                    "created_at": t.get('created_at', ''),
+                }
+                for t in templates
+            ],
+            "count": len(templates)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/campaigns/{campaign_id}/saved-content")
+async def get_campaign_saved_content(campaign_id: str, user_id: str):
+    """
+    Retrieve all saved AI-generated content for a campaign in one call.
+    Returns leads, template, and cadence.
+    """
+    # Fetch all in parallel
+    import asyncio
+    leads_task = get_generated_leads(async_supabase_client, user_id, campaign_id)
+    template_task = get_generated_template(async_supabase_client, campaign_id)
+    cadence_task = get_generated_cadence(async_supabase_client, campaign_id)
+
+    leads, template, cadence = await asyncio.gather(leads_task, template_task, cadence_task)
+
+    return {
+        "leads": leads,
+        "template": {
+            "subject": template.get('subject', ''),
+            "body": template.get('body', ''),
+            "placeholders": template.get('placeholders', []),
+        } if template else None,
+        "cadence": cadence,
+        "has_saved_content": bool(leads or template or cadence),
+    }
 
 
 # -----------------------------------------------------------------------------

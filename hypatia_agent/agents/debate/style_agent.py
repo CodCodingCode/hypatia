@@ -26,7 +26,7 @@ class StyleDebateAgent(BaseDebateAgent):
 Your job is to write cold outreach emails that sound EXACTLY like the person would write them - same tone, vocabulary, sentence structure, and personality.
 
 CRITICAL RULES:
-1. Use placeholders for personalization: {first_name}, {title}, {company}
+1. Use placeholders for personalization: {first_name}, {last_name}
 2. Keep emails SHORT (under 100 words for body)
 3. Match the style EXACTLY - if they use lowercase, you use lowercase
 4. The call-to-action should feel natural, not forced
@@ -70,8 +70,7 @@ CALL-TO-ACTION (what we want the recipient to do):
 
 PLACEHOLDERS TO USE:
 - {{first_name}} - recipient's first name
-- {{title}} - recipient's job title
-- {{company}} - recipient's company name
+- {{last_name}} - recipient's last name
 
 Write the email now. Format as:
 SUBJECT: [subject line]

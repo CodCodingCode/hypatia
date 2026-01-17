@@ -75,6 +75,9 @@ class ManagerAgent:
         people_target: str,
         style: str,
         sample_emails: list = None,
+        email_subject: str = None,
+        email_body: str = None,
+        recipient_linkedin_url: str = None,
     ) -> dict:
         """
         Execute a full email campaign.
@@ -85,6 +88,9 @@ class ManagerAgent:
             people_target: Description of who to contact
             style: Writing style prompt
             sample_emails: Optional sample emails for style reference
+            email_subject: Optional email subject for pipeline-based search
+            email_body: Optional email body for pipeline-based search
+            recipient_linkedin_url: Optional LinkedIn URL for profile enrichment
 
         Returns:
             dict with contacts, emails, and followup_plan
@@ -96,7 +102,13 @@ class ManagerAgent:
 
         # Step 1: Find people to contact
         print("[Manager] Delegating to PeopleFinderAgent...")
-        contacts = await self.people_finder.find(user_id, people_target)
+        contacts = await self.people_finder.find(
+            user_id=user_id,
+            target_description=people_target,
+            email_subject=email_subject,
+            email_body=email_body,
+            recipient_linkedin_url=recipient_linkedin_url,
+        )
         print(f"[Manager] Found {len(contacts)} contacts")
         for c in contacts:
             print(f"  - {c.get('name', 'Unknown')} ({c.get('email')}) - {c.get('title', 'N/A')}")

@@ -5,6 +5,7 @@ from .style_agent import StyleDebateAgent
 from .cta_agent import CTADebateAgent
 from .best_practice_agent import BestPracticeDebateAgent
 from .orchestrator import DebateOrchestrator
+from .langgraph_orchestrator import LangGraphDebateOrchestrator, run_langgraph_debate
 
 __all__ = [
     "BaseDebateAgent",
@@ -12,4 +13,6 @@ __all__ = [
     "CTADebateAgent",
     "BestPracticeDebateAgent",
     "DebateOrchestrator",
+    "LangGraphDebateOrchestrator",
+    "run_langgraph_debate",
 ]

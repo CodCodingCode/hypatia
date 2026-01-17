@@ -121,7 +121,13 @@ class GmailService:
         refresh_token = token_data.get("refresh_token")
 
         if expires_at_str:
-            expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+            # Handle various ISO format variations from Supabase
+            exp_str = expires_at_str.replace("Z", "+00:00")
+            # Python 3.10 fromisoformat needs exactly 6 microsecond digits
+            # Fix cases like .9647+00:00 -> .964700+00:00
+            import re
+            exp_str = re.sub(r'\.(\d{1,5})([+-])', lambda m: f'.{m.group(1).ljust(6, "0")}{m.group(2)}', exp_str)
+            expires_at = datetime.fromisoformat(exp_str)
             now = datetime.now(timezone.utc)
 
             if now >= expires_at - timedelta(minutes=5):

@@ -1,14 +1,14 @@
 """
 LLM Client for Hypatia Agent System.
 
-Wrapper around BackboardClient for simplified async LLM calls.
+Wrapper around OpenRouter API for simplified async LLM calls.
 """
 
 import os
 import re
 import json
+import httpx
 from pathlib import Path
-from backboard import BackboardClient
 
 
 def _load_env():
@@ -25,22 +25,21 @@ def _load_env():
 
 _load_env()
 
-BACKBOARD_API_KEY = os.environ.get("BACKBOARD_API_KEY")
-DEFAULT_MODEL = "gpt-4o"
-DEFAULT_PROVIDER = "openai"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+DEFAULT_MODEL = "google/gemini-3-flash-preview"
 
 
 class LLMClient:
     """
-    Async LLM client using Backboard API.
+    Async LLM client using OpenRouter API.
 
     Provides a simple interface for debate agents to get completions.
     """
 
-    def __init__(self, model: str = None, provider: str = None):
+    def __init__(self, model: str = None):
         self.model = model or DEFAULT_MODEL
-        self.provider = provider or DEFAULT_PROVIDER
-        self.api_key = BACKBOARD_API_KEY
+        self.api_key = OPENROUTER_API_KEY
+        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
     async def complete(
         self,
@@ -61,24 +60,30 @@ class LLMClient:
         """
         model = model or self.model
 
-        # Create fresh client for each call (avoids event loop issues)
-        client = BackboardClient(api_key=self.api_key)
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
-        assistant = await client.create_assistant(name="Hypatia Agent")
-        thread = await client.create_thread(assistant.assistant_id)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
 
-        # Combine system and user prompts into the message
-        full_prompt = f"SYSTEM: {system_prompt}\n\nUSER: {user_prompt}"
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.base_url,
+                headers=headers,
+                json=payload,
+                timeout=60.0,
+            )
+            response.raise_for_status()
+            data = response.json()
 
-        response = await client.add_message(
-            thread_id=thread.thread_id,
-            content=full_prompt,
-            llm_provider=self.provider,
-            model_name=model,
-            stream=False,
-        )
-
-        return response.content.strip()
+        return data["choices"][0]["message"]["content"].strip()
 
     async def complete_json(
         self,

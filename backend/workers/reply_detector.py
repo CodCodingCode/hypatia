@@ -86,8 +86,18 @@ class ReplyDetectorWorker:
         Returns False if message should be nacked for retry.
         """
         try:
-            # Decode message data
-            data = json.loads(base64.b64decode(message.data).decode())
+            # Decode message data - Pub/Sub may send raw JSON or base64 encoded
+            raw_data = message.data
+            if isinstance(raw_data, bytes):
+                raw_data = raw_data.decode("utf-8")
+
+            # Try parsing as JSON first (Pub/Sub client may already decode)
+            try:
+                data = json.loads(raw_data)
+            except json.JSONDecodeError:
+                # Fall back to base64 decoding with padding fix
+                padded = raw_data + "=" * (4 - len(raw_data) % 4)
+                data = json.loads(base64.b64decode(padded).decode())
             user_email = data.get("emailAddress")
             history_id = str(data.get("historyId", ""))
 
@@ -95,7 +105,7 @@ class ReplyDetectorWorker:
                 logger.warning(f"Invalid message format: {data}")
                 return True  # Ack invalid messages to avoid infinite retry
 
-            logger.debug(f"Processing notification for {user_email}, historyId={history_id}")
+            logger.info(f"Processing notification for {user_email}, historyId={history_id}")
 
             # Get user by email
             users = self.supabase.request(
@@ -103,7 +113,7 @@ class ReplyDetectorWorker:
             )
 
             if not users:
-                logger.debug(f"No user found for email: {user_email}")
+                logger.info(f"No user found for email: {user_email}")
                 return True  # Ack - not our user
 
             user_id = users[0]["id"]
@@ -116,7 +126,7 @@ class ReplyDetectorWorker:
 
             stored_history_id = token_data.get("history_id")
             if not stored_history_id:
-                logger.debug(f"No stored history_id for user {user_id}")
+                logger.info(f"No stored history_id for user {user_id}, updating to {history_id}")
                 # Update the history_id for next time
                 self.supabase.request(
                     f"gmail_tokens?user_id=eq.{user_id}",
@@ -146,12 +156,14 @@ class ReplyDetectorWorker:
 
             # Process each change
             total_cancelled = 0
+            logger.info(f"Got {len(changes)} history changes for user {user_id}")
             for change in changes:
                 messages_added = change.get("messagesAdded", [])
                 for msg_add in messages_added:
                     msg = msg_add.get("message", {})
                     thread_id = msg.get("threadId")
                     label_ids = msg.get("labelIds", [])
+                    logger.info(f"New message in thread {thread_id}, labels: {label_ids}")
 
                     # Only process INBOX messages (replies to our sent emails)
                     if thread_id and "INBOX" in label_ids:

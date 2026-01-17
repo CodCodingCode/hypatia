@@ -172,6 +172,9 @@ async function fetchSentEmails(token, onProgress) {
 // =============================================================================
 
 async function supabaseRequest(endpoint, method, body = null, extraHeaders = {}) {
+  const url = `${CONFIG.SUPABASE_URL}/rest/v1/${endpoint}`;
+  console.log('[Hypatia] Supabase request:', method, url);
+
   const options = {
     method,
     headers: {
@@ -187,15 +190,18 @@ async function supabaseRequest(endpoint, method, body = null, extraHeaders = {})
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${endpoint}`, options);
+  const response = await fetch(url, options);
 
   if (!response.ok) {
     const error = await response.text();
+    console.error('[Hypatia] Supabase error:', response.status, error);
     throw new Error(`Supabase error: ${error}`);
   }
 
   const text = await response.text();
-  return text ? JSON.parse(text) : null;
+  const result = text ? JSON.parse(text) : null;
+  console.log('[Hypatia] Supabase response:', method, endpoint.split('?')[0], '→', Array.isArray(result) ? result.length + ' rows' : result);
+  return result;
 }
 
 async function getOrCreateUser(email, googleId) {
@@ -317,11 +323,15 @@ async function analyzeUserCampaigns(userId) {
 }
 
 async function fetchUserCampaigns(userId) {
+  console.log('[Hypatia] Fetching campaigns for userId:', userId);
+
   // Fetch campaigns with related analysis data (CTA, style, contacts) using Supabase joins
   const campaigns = await supabaseRequest(
     `campaigns?user_id=eq.${userId}&select=*,campaign_ctas(*),campaign_email_styles(*),campaign_contacts(*)&order=email_count.desc`,
     'GET'
   );
+
+  console.log('[Hypatia] Supabase returned campaigns:', campaigns?.length || 0, campaigns);
 
   // Flatten the nested analysis data for easier access in the frontend
   if (campaigns && campaigns.length > 0) {
@@ -397,7 +407,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'getCampaigns') {
-    handleGetCampaigns(request.userId).then(sendResponse);
+    handleGetCampaigns(request.userId)
+      .then(sendResponse)
+      .catch(err => {
+        console.error('[Hypatia] getCampaigns message handler error:', err);
+        sendResponse({ success: false, error: err.message });
+      });
     return true;
   }
 
@@ -450,6 +465,79 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'signOut') {
     handleSignOut().then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'generateLeads') {
+    handleGenerateLeads(request.userId, request.campaignId, request.query, request.limit)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'generateTemplate') {
+    handleGenerateTemplate(request.userId, request.campaignId, request.cta, request.stylePrompt, request.sampleEmails, request.currentSubject, request.currentBody)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'generateCadence') {
+    handleGenerateCadence(request.userId, request.campaignId, request.stylePrompt, request.sampleEmails, request.timing)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'updateCadenceEmail') {
+    handleUpdateCadenceEmail(request.cadenceId, request.updates)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'regenerateCadenceEmail') {
+    handleRegenerateCadenceEmail(request.cadenceId, request.userId)
+      .then(sendResponse);
+    return true;
+  }
+
+  // Fetch saved AI-generated content
+  if (request.action === 'getSavedContent') {
+    handleGetSavedContent(request.userId, request.campaignId)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getSavedLeads') {
+    handleGetSavedLeads(request.userId, request.campaignId)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getSavedTemplate') {
+    handleGetSavedTemplate(request.campaignId)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getSavedCTAs') {
+    handleGetSavedCTAs(request.campaignId)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getAllTemplates') {
+    handleGetAllTemplates(request.userId)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'sendEmailBatch') {
+    handleSendEmailBatch(request.userId, request.campaignId, request.emails)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'sendSingleEmail') {
+    handleSendSingleEmail(request.userId, request.campaignId, request.email)
+      .then(sendResponse);
     return true;
   }
 });
@@ -536,10 +624,13 @@ async function handleQuestionnaireSubmission(userId, answers) {
 }
 
 async function handleGetCampaigns(userId) {
+  console.log('[Hypatia] handleGetCampaigns called with userId:', userId);
   try {
     const campaigns = await fetchUserCampaigns(userId);
+    console.log('[Hypatia] handleGetCampaigns returning:', campaigns?.length || 0, 'campaigns');
     return { success: true, campaigns };
   } catch (error) {
+    console.error('[Hypatia] handleGetCampaigns error:', error);
     return { success: false, error: error.message };
   }
 }
@@ -651,12 +742,23 @@ async function handleOnboarding(tabId) {
       campaigns: backendResult.campaigns
     });
 
-    // Store completion status locally
-    await chrome.storage.local.set({
-      onboardingComplete: true,
-      userEmail: userInfo.email,
-      userId: user.id
-    });
+    // Only mark onboarding complete if we have campaigns
+    // Otherwise the user will see "No email categories found" on reload
+    if (backendResult.campaigns && backendResult.campaigns.length > 0) {
+      await chrome.storage.local.set({
+        onboardingComplete: true,
+        userEmail: userInfo.email,
+        userId: user.id
+      });
+      console.log('[Hypatia] Onboarding complete with', backendResult.campaigns.length, 'campaigns');
+    } else {
+      console.warn('[Hypatia] No campaigns created - not marking onboarding complete');
+      // Still store userId for debugging but not complete status
+      await chrome.storage.local.set({
+        userEmail: userInfo.email,
+        userId: user.id
+      });
+    }
 
   } catch (error) {
     console.error('Onboarding error:', error.message || JSON.stringify(error));
@@ -910,6 +1012,419 @@ async function handleCancelFollowup(followupId) {
 
     return { success: true };
   } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// =============================================================================
+// LEAD GENERATION HANDLERS
+// =============================================================================
+
+async function handleGenerateLeads(userId, campaignId, query, limit = 20) {
+  /**
+   * Generate leads using PeopleFinderAgent via the backend API.
+   * Returns contacts matching the natural language query.
+   */
+  try {
+    console.log('[Hypatia] Generating leads:', { userId, campaignId, query, limit });
+
+    const response = await fetch(`${CONFIG.API_URL}/leads/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        campaign_id: campaignId,
+        query: query,
+        limit: limit
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Hypatia] Lead generation failed:', error);
+      throw new Error(`Lead generation failed: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Generated leads:', result.count);
+
+    return { success: true, leads: result.leads, count: result.count };
+  } catch (error) {
+    console.error('[Hypatia] Lead generation error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// =============================================================================
+// TEMPLATE GENERATION HANDLERS
+// =============================================================================
+
+async function handleGenerateTemplate(userId, campaignId, cta, stylePrompt, sampleEmails = [], currentSubject = null, currentBody = null) {
+  /**
+   * Generate an email template using the DebateOrchestrator via the backend API.
+   * Runs a multi-agent debate to create an optimized template.
+   */
+  try {
+    console.log('[Hypatia] Generating template:', { userId, campaignId, cta: cta?.substring(0, 50) });
+
+    const response = await fetch(`${CONFIG.API_URL}/templates/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        campaign_id: campaignId,
+        cta: cta,
+        style_prompt: stylePrompt,
+        sample_emails: sampleEmails,
+        current_subject: currentSubject,
+        current_body: currentBody
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Hypatia] Template generation failed:', error);
+      throw new Error(`Template generation failed: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Generated template:', result.template?.subject);
+
+    return { success: true, template: result.template };
+  } catch (error) {
+    console.error('[Hypatia] Template generation error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleGenerateCadence(userId, campaignId, stylePrompt, sampleEmails = [], timing = {}) {
+  /**
+   * Generate email cadence (initial + 3 follow-ups) using AI via the backend API.
+   * Returns 4 emails with configurable timing.
+   */
+  try {
+    console.log('[Hypatia] Generating cadence:', { userId, campaignId });
+
+    const response = await fetch(`${CONFIG.API_URL}/cadence/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        campaign_id: campaignId,
+        style_prompt: stylePrompt,
+        sample_emails: sampleEmails,
+        day_1: timing.day_1 || 1,
+        day_2: timing.day_2 || 3,
+        day_3: timing.day_3 || 7,
+        day_4: timing.day_4 || 14,
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Hypatia] Cadence generation failed:', error);
+      throw new Error(`Cadence generation failed: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Generated cadence:', result.cadence?.length, 'emails');
+
+    return { success: true, cadence: result.cadence };
+  } catch (error) {
+    console.error('[Hypatia] Cadence generation error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleUpdateCadenceEmail(cadenceId, updates) {
+  /**
+   * Update a single cadence email (timing, subject, or body).
+   */
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/cadence/${cadenceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to update cadence email');
+    }
+
+    const result = await response.json();
+    return { success: true, updated: result.updated };
+  } catch (error) {
+    console.error('[Hypatia] Update cadence error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleRegenerateCadenceEmail(cadenceId, userId) {
+  /**
+   * Regenerate a single cadence email with fresh AI content.
+   */
+  try {
+    const response = await fetch(`${CONFIG.API_URL}/cadence/${cadenceId}/regenerate?user_id=${userId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to regenerate cadence email');
+    }
+
+    const result = await response.json();
+    return { success: true, email: result.email };
+  } catch (error) {
+    console.error('[Hypatia] Regenerate cadence error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+
+// =============================================================================
+// SAVED CONTENT RETRIEVAL HANDLERS
+// =============================================================================
+
+async function handleGetSavedContent(userId, campaignId) {
+  /**
+   * Fetch all saved AI-generated content for a campaign in one call.
+   * Returns leads, template, and CTAs.
+   */
+  try {
+    console.log('[Hypatia] Fetching saved content:', { userId, campaignId });
+
+    const response = await fetch(
+      `${CONFIG.API_URL}/campaigns/${campaignId}/saved-content?user_id=${userId}`,
+      { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Hypatia] Failed to fetch saved content:', error);
+      throw new Error(`Failed to fetch saved content: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Fetched saved content:', {
+      leadsCount: result.leads?.length,
+      hasTemplate: !!result.template,
+      ctasCount: result.ctas?.length
+    });
+
+    return {
+      success: true,
+      leads: result.leads || [],
+      template: result.template,
+      ctas: result.ctas || [],
+      hasSavedContent: result.has_saved_content
+    };
+  } catch (error) {
+    console.error('[Hypatia] Error fetching saved content:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleGetSavedLeads(userId, campaignId = null) {
+  /**
+   * Fetch saved generated leads for a user/campaign.
+   */
+  try {
+    console.log('[Hypatia] Fetching saved leads:', { userId, campaignId });
+
+    let url = `${CONFIG.API_URL}/leads/${userId}`;
+    if (campaignId) {
+      url += `?campaign_id=${campaignId}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to fetch leads: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Fetched saved leads:', result.count);
+
+    return { success: true, leads: result.leads || [], count: result.count };
+  } catch (error) {
+    console.error('[Hypatia] Error fetching saved leads:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleGetSavedTemplate(campaignId) {
+  /**
+   * Fetch saved generated template for a campaign.
+   */
+  try {
+    console.log('[Hypatia] Fetching saved template:', { campaignId });
+
+    const response = await fetch(`${CONFIG.API_URL}/templates/${campaignId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to fetch template: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Fetched saved template:', result.template ? 'found' : 'not found');
+
+    return { success: true, template: result.template };
+  } catch (error) {
+    console.error('[Hypatia] Error fetching saved template:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleGetSavedCTAs(campaignId) {
+  /**
+   * Fetch saved generated CTAs for a campaign.
+   */
+  try {
+    console.log('[Hypatia] Fetching saved CTAs:', { campaignId });
+
+    const response = await fetch(`${CONFIG.API_URL}/ctas/${campaignId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to fetch CTAs: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Fetched saved CTAs:', result.ctas?.length);
+
+    return { success: true, ctas: result.ctas || [] };
+  } catch (error) {
+    console.error('[Hypatia] Error fetching saved CTAs:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleGetAllTemplates(userId) {
+  /**
+   * Fetch all saved templates for a user (for templates list view).
+   */
+  try {
+    console.log('[Hypatia] Fetching all templates for user:', userId);
+
+    const response = await fetch(`${CONFIG.API_URL}/templates/user/${userId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to fetch templates: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Fetched all templates:', result.count);
+
+    return { success: true, templates: result.templates || [], count: result.count };
+  } catch (error) {
+    console.error('[Hypatia] Error fetching all templates:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// =============================================================================
+// EMAIL SENDING HANDLERS
+// =============================================================================
+
+async function handleSendEmailBatch(userId, campaignId, emails) {
+  /**
+   * Send a batch of emails via the backend API.
+   * Syncs Gmail token first to ensure it's valid.
+   */
+  try {
+    console.log('[Hypatia] Sending email batch:', { userId, campaignId, count: emails.length });
+
+    // First ensure Gmail token is fresh
+    await syncGmailTokenToBackend(userId);
+
+    const response = await fetch(`${CONFIG.API_URL}/emails/send-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        campaign_id: campaignId,
+        emails: emails
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Hypatia] Send batch failed:', error);
+
+      // Check for auth errors
+      if (response.status === 401) {
+        return { success: false, error: 'Gmail authentication expired. Please sign out and sign back in.', authError: true };
+      }
+
+      throw new Error(`Send failed: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Send batch result:', { sent: result.sent, failed: result.failed });
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('[Hypatia] Send batch error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleSendSingleEmail(userId, campaignId, email) {
+  /**
+   * Send a single email via the backend API.
+   * Used for real-time progress updates when sending one-by-one.
+   */
+  try {
+    // First ensure Gmail token is fresh
+    await syncGmailTokenToBackend(userId);
+
+    const response = await fetch(`${CONFIG.API_URL}/emails/send-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        campaign_id: campaignId,
+        emails: [email]
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+
+      if (response.status === 401) {
+        return { success: false, error: 'Gmail authentication expired', authError: true };
+      }
+
+      throw new Error(`Send failed: ${error}`);
+    }
+
+    const result = await response.json();
+    const emailResult = result.results[0];
+
+    return {
+      success: emailResult.success,
+      gmail_id: emailResult.gmail_id,
+      thread_id: emailResult.thread_id,
+      error: emailResult.error
+    };
+  } catch (error) {
+    console.error('[Hypatia] Send single email error:', error);
     return { success: false, error: error.message };
   }
 }

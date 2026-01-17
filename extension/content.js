@@ -13,6 +13,8 @@ const HYPATIA_BUTTON_ID = 'hypatia-signin-button';
 const HYPATIA_SIDEBAR_ID = 'hypatia-sidebar';
 const HYPATIA_HASH = 'hypatia';
 const HYPATIA_CAMPAIGN_HASH_PREFIX = 'hypatia/campaign/';
+const HYPATIA_LEADS_HASH = 'hypatia/leads';
+const HYPATIA_TEMPLATES_HASH = 'hypatia/templates';
 const HYPATIA_DASHBOARD_HASH = 'hypatia/dashboard';
 
 // Store the previous hash to navigate back
@@ -22,7 +24,7 @@ let previousHash = '';
 // STATE
 // =============================================================================
 
-let currentStep = 'welcome'; // welcome, progress, questionnaire, waiting, complete, error, campaigns, campaign_detail, leads, template, sent
+let currentStep = 'welcome'; // welcome, progress, questionnaire, waiting, complete, error, campaigns, campaign_detail, leads, template, sent, generating
 let progressData = { current: 0, total: 100 };
 let isOnboardingVisible = false;
 let lastButtonCheck = 0;
@@ -37,90 +39,30 @@ let currentCampaignsPage = 1; // Current page for campaigns pagination
 const CAMPAIGNS_PER_PAGE = 6; // 3x2 grid
 let sidebarInjected = false; // Track if sidebar has been injected
 
-// Questionnaire state
-let userDisplayName = '';
-let questionnaireState = {
-  currentQuestion: 0,
-  answers: {
-    displayName: '',
-    nameConfirmed: false,
-    appPurpose: '',
-    userType: '',
-    generalCtas: '',
-    contactTypes: '',
-    referralSource: ''
-  },
-  isComplete: false
+// Parallel generation state for leads + template + cadence
+let parallelGenerationState = {
+  isGenerating: false,
+  leadsLoading: false,
+  templateLoading: false,
+  cadenceLoading: false,
+  leadsResult: null,
+  templateResult: null,
+  cadenceResult: null,
+  leadsError: null,
+  templateError: null,
+  cadenceError: null
 };
 
-let backendState = {
-  isComplete: false,
-  emailCount: 0,
-  campaignsCreated: 0,
-  campaigns: []
+// Current cadence timing (user-configurable)
+let currentCadenceTiming = {
+  day_1: 1,   // Initial outreach
+  day_2: 3,   // Follow-up 1
+  day_3: 7,   // Follow-up 2
+  day_4: 14   // Follow-up 3
 };
 
-// Questionnaire questions configuration
-const QUESTIONNAIRE_QUESTIONS = [
-  {
-    id: 'name',
-    title: 'Is this your name?',
-    type: 'name_confirm',
-    required: true
-  },
-  {
-    id: 'purpose',
-    title: 'What will you use the app for?',
-    type: 'text',
-    placeholder: 'e.g., Managing client communications, personal email organization...',
-    required: true
-  },
-  {
-    id: 'userType',
-    title: 'Who are you?',
-    type: 'select',
-    options: [
-      { value: 'student', label: 'Student' },
-      { value: 'professional', label: 'Professional' },
-      { value: 'business_owner', label: 'Business Owner' },
-      { value: 'freelancer', label: 'Freelancer' },
-      { value: 'other', label: 'Other' }
-    ],
-    required: true
-  },
-  {
-    id: 'ctas',
-    title: 'What kind of general CTAs do you have?',
-    type: 'text',
-    placeholder: 'e.g., Schedule meetings, request feedback, send proposals...',
-    required: false,
-    hint: 'Optional - helps us understand your workflow'
-  },
-  {
-    id: 'contacts',
-    title: 'What kind of people do you generally contact?',
-    type: 'text',
-    placeholder: 'e.g., Clients, colleagues, vendors, friends...',
-    required: false,
-    hint: 'Optional - helps personalize your experience'
-  },
-  {
-    id: 'referral',
-    title: 'Where did you find this app?',
-    type: 'select',
-    options: [
-      { value: 'google_search', label: 'Google Search' },
-      { value: 'seo', label: 'Blog / Article' },
-      { value: 'facebook', label: 'Facebook' },
-      { value: 'twitter', label: 'Twitter / X' },
-      { value: 'linkedin', label: 'LinkedIn' },
-      { value: 'friend', label: 'Friend / Colleague' },
-      { value: 'product_hunt', label: 'Product Hunt' },
-      { value: 'other', label: 'Other' }
-    ],
-    required: true
-  }
-];
+// Note: Shared state (userDisplayName, questionnaireState, backendState, QUESTIONNAIRE_QUESTIONS)
+// is defined in onboarding.js which loads before this file per manifest.json
 
 // =============================================================================
 // GMAIL DOM HELPERS
@@ -280,11 +222,21 @@ function addFloatingButton() {
 function updateButtonState(isComplete) {
   const btn = document.getElementById('hypatia-header-btn');
   if (btn) {
+    // Mark the button's complete state as a data attribute
+    btn.dataset.complete = isComplete ? 'true' : 'false';
+
+    // Always use the blue H SVG logo
+    btn.innerHTML = `
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="#5f6368" stroke-width="1.5">
+        <circle cx="12" cy="12" r="10"/>
+        <text x="12" y="16.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="500" fill="#4285f4" stroke="none">H</text>
+      </svg>
+    `;
+
     if (isComplete) {
-      // Keep the "H" but change to green checkmark style
-      btn.textContent = 'H';
-      btn.style.background = '#34a853';
       btn.classList.add('hypatia-btn-complete');
+    } else {
+      btn.classList.remove('hypatia-btn-complete');
     }
   }
 }
@@ -302,10 +254,13 @@ function ensureButtonExists() {
     // Force visibility on container
     container.setAttribute('style', 'display:flex!important;align-items:center!important;margin-left:8px!important;visibility:visible!important;opacity:1!important;');
 
-    // Also force visibility on the inner button
+    // Also force visibility on the inner button, but preserve hover state
     const innerBtn = document.getElementById('hypatia-header-btn');
     if (innerBtn) {
-      innerBtn.setAttribute('style', 'display:inline-flex!important;align-items:center!important;justify-content:center!important;visibility:visible!important;opacity:1!important;width:40px!important;height:40px!important;padding:0!important;background:transparent!important;border:none!important;border-radius:50%!important;cursor:pointer!important;line-height:1!important;');
+      // Don't override background if button is being hovered (check via matches)
+      const isHovered = innerBtn.matches(':hover');
+      const background = isHovered ? 'rgba(0,0,0,0.06)' : 'transparent';
+      innerBtn.setAttribute('style', `display:inline-flex!important;align-items:center!important;justify-content:center!important;visibility:visible!important;opacity:1!important;width:40px!important;height:40px!important;padding:0!important;background:${background}!important;border:none!important;border-radius:50%!important;cursor:pointer!important;line-height:1!important;`);
     }
   }
 }
@@ -322,7 +277,11 @@ function setupButtonPersistence() {
 
 function isHypatiaHash() {
   const hash = window.location.hash.slice(1); // Remove the #
-  return hash === HYPATIA_HASH || hash.startsWith(HYPATIA_CAMPAIGN_HASH_PREFIX);
+  return hash === HYPATIA_HASH ||
+         hash.startsWith(HYPATIA_CAMPAIGN_HASH_PREFIX) ||
+         hash === HYPATIA_LEADS_HASH ||
+         hash === HYPATIA_TEMPLATES_HASH ||
+         hash === HYPATIA_DASHBOARD_HASH;
 }
 
 function getCampaignIdFromHash() {
@@ -367,12 +326,20 @@ function handleHashChange() {
     if (campaignId) {
       // Navigate directly to a specific campaign
       loadCampaignFromHash(campaignId);
+    } else if (hash === HYPATIA_LEADS_HASH) {
+      // Leads view
+      currentStep = 'leads_list';
+      showOnboardingPanel();
+    } else if (hash === HYPATIA_TEMPLATES_HASH) {
+      // Templates view
+      currentStep = 'templates_list';
+      showOnboardingPanel();
     } else if (hash === HYPATIA_DASHBOARD_HASH) {
       // Dashboard view
       currentStep = 'dashboard';
       showOnboardingPanel();
     } else {
-      // Just show the main Hypatia panel (campaigns)
+      // Just show the main Hypatia panel - let showOnboardingPanel fetch campaigns
       showOnboardingPanel();
     }
     // Update sidebar active state
@@ -397,6 +364,8 @@ function loadCampaignFromHash(campaignId) {
     currentTemplate = campaign.template || { subject: '', body: '' };
     currentStep = 'campaign_detail';
     showOnboardingPanel();
+    // Load saved AI-generated content in background
+    loadSavedCampaignContent(campaignId);
   } else {
     // Campaign not found in local data, show panel and it will use dummy data or fetch
     currentStep = 'campaigns';
@@ -441,8 +410,13 @@ async function showOnboardingPanel() {
         chrome.runtime.sendMessage({ action: 'getCampaigns', userId: status.userId }, resolve);
       });
 
+      console.log('[Hypatia] getCampaigns response:', campaignsResponse);
+
       if (campaignsResponse && campaignsResponse.success && campaignsResponse.campaigns) {
         campaignsData = campaignsResponse.campaigns;
+        console.log('[Hypatia] Loaded campaigns:', campaignsData.length);
+      } else {
+        console.error('[Hypatia] Failed to load campaigns:', campaignsResponse?.error || 'Unknown error');
       }
 
       currentStep = 'campaigns';
@@ -453,7 +427,7 @@ async function showOnboardingPanel() {
   container.id = HYPATIA_CONTAINER_ID;
   container.innerHTML = `
     <div class="hypatia-panel">
-      <div class="hypatia-panel-content${(currentStep === 'campaigns' || currentStep === 'campaign_detail') ? ' hypatia-fullwidth' : ''}">
+      <div class="hypatia-panel-content${(currentStep === 'campaigns' || currentStep === 'campaign_detail' || currentStep === 'leads' || currentStep === 'leads_list' || currentStep === 'template' || currentStep === 'templates_list' || currentStep === 'sent' || currentStep === 'generating') ? ' hypatia-fullwidth' : ''}">
         ${getStepContent()}
       </div>
     </div>
@@ -521,6 +495,18 @@ function getStepContent() {
       return getTemplateStep();
     case 'sent':
       return getSentStep();
+    case 'generating':
+      return getGeneratingStep();
+    case 'leads_list':
+      // Async step - return loading placeholder, then load content
+      clearLeadsCache();  // Clear cache to get fresh data
+      setTimeout(() => loadAsyncStepContent('leads_list'), 0);
+      return getLoadingPlaceholder('leads');
+    case 'templates_list':
+      // Async step - return loading placeholder, then load content
+      clearTemplatesCache();  // Clear cache to get fresh data
+      setTimeout(() => loadAsyncStepContent('templates_list'), 0);
+      return getLoadingPlaceholder('templates');
     case 'dashboard':
       return getDashboardStep();
     case 'error':
@@ -530,274 +516,17 @@ function getStepContent() {
   }
 }
 
-function getLoadingStep() {
-  return `
-    <div class="hypatia-step hypatia-loading">
-      <div class="hypatia-spinner-container">
-        <div class="hypatia-spinner"></div>
-      </div>
-      <p class="hypatia-subtitle">Loading...</p>
-    </div>
-  `;
-}
+// Note: getLoadingStep, getSigningInStep, getWelcomeStep are now in onboarding.js
 
-function getSigningInStep() {
-  return `
-    <div class="hypatia-step hypatia-signing-in">
-      <div class="hypatia-logo">
-        <svg width="48" height="48" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="32" cy="32" r="30" stroke="#4285f4" stroke-width="3" fill="none"/>
-          <path d="M20 32 L28 40 L44 24" stroke="#4285f4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      </div>
 
-      <h1 class="hypatia-title">Signing In</h1>
-
-      <div class="hypatia-spinner-container">
-        <div class="hypatia-spinner"></div>
-      </div>
-
-      <p class="hypatia-subtitle" id="hypatia-signin-status">
-        Connecting to your Google account...
-      </p>
-
-      <p class="hypatia-hint">
-        A Google sign-in popup may appear. Please complete the sign-in to continue.
-      </p>
-    </div>
-  `;
-}
-
-function getWelcomeStep() {
-  return `
-    <div class="hypatia-step hypatia-welcome">
-      <div class="hypatia-logo">
-        <svg width="48" height="48" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="32" cy="32" r="30" stroke="#4285f4" stroke-width="3" fill="none"/>
-          <path d="M20 32 L28 40 L44 24" stroke="#4285f4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      </div>
-
-      <h1 class="hypatia-title">Welcome to Hypatia</h1>
-
-      <p class="hypatia-subtitle">
-        Your personal email intelligence assistant
-      </p>
-
-      <div class="hypatia-explanation">
-        <h3>How Hypatia Works</h3>
-        <p>
-          Hypatia learns your unique communication style by analyzing your sent emails.
-          This helps us understand how you write so we can help you write better emails faster.
-        </p>
-
-        <div class="hypatia-features">
-          <div class="hypatia-feature">
-            <div class="hypatia-feature-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-              </svg>
-            </div>
-            <div class="hypatia-feature-text">
-              <strong>What we analyze</strong>
-              <span>Your 200 most recent sent emails</span>
-            </div>
-          </div>
-
-          <div class="hypatia-feature">
-            <div class="hypatia-feature-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-              </svg>
-            </div>
-            <div class="hypatia-feature-text">
-              <strong>Your privacy matters</strong>
-              <span>Data encrypted, never shared</span>
-            </div>
-          </div>
-
-          <div class="hypatia-feature">
-            <div class="hypatia-feature-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-              </svg>
-            </div>
-            <div class="hypatia-feature-text">
-              <strong>One-time setup</strong>
-              <span>Takes just a moment</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <button class="hypatia-btn hypatia-btn-primary" id="hypatia-start-btn">
-        Get Started
-      </button>
-
-      <p class="hypatia-privacy-note">
-        By continuing, you agree to let Hypatia analyze your sent emails.
-      </p>
-    </div>
-  `;
-}
-
-// Clustering phase messages that rotate for entertainment
-const CLUSTERING_MESSAGES = [
-  'Grouping emails into categories...',
-  'Finding patterns in your emails...',
-  'Analyzing writing styles...',
-  'Discovering email clusters...',
-  'Comparing message similarity...',
-  'Organizing your conversations...',
-  'Identifying unique campaigns...',
-  'Connecting the dots...',
-  'Almost there...',
-];
-
-function getProgressStep() {
-  const percentage = Math.round((progressData.current / progressData.total) * 100);
-  const isClustering = progressData.step === 'clustering';
-
-  // If clustering, start the animation
-  if (isClustering) {
-    startClusteringAnimation();
-  }
-
-  return `
-    <div class="hypatia-step hypatia-progress">
-      <div class="hypatia-spinner-container">
-        <div class="hypatia-spinner"></div>
-      </div>
-
-      <h2 class="hypatia-title">${isClustering ? 'Grouping Your Emails' : 'Analyzing Your Emails'}</h2>
-
-      <p class="hypatia-subtitle" id="hypatia-status-message">
-        ${progressData.message || 'Fetching your sent emails...'}
-      </p>
-
-      ${isClustering ? `
-        <div class="hypatia-progress-container" id="hypatia-clustering-progress">
-          <div class="hypatia-progress-bar">
-            <div class="hypatia-progress-fill hypatia-progress-animated" id="hypatia-clustering-fill" style="width: 0%"></div>
-          </div>
-        </div>
-      ` : `
-        <div class="hypatia-progress-container" id="hypatia-progress-container">
-          <div class="hypatia-progress-bar">
-            <div class="hypatia-progress-fill" style="width: ${percentage}%"></div>
-          </div>
-          <div class="hypatia-progress-text">
-            <span id="hypatia-progress-current">${progressData.current}</span>
-            <span> / </span>
-            <span id="hypatia-progress-total">${progressData.total}</span>
-            <span> emails</span>
-          </div>
-        </div>
-        <p class="hypatia-hint">
-          Please keep this tab open while we analyze.
-        </p>
-      `}
-    </div>
-  `;
-}
-
-function startClusteringAnimation() {
-  // Clear any existing animation
-  if (clusteringAnimationInterval) {
-    clearInterval(clusteringAnimationInterval);
-  }
-
-  let progress = 0;
-  let messageIndex = 0;
-
-  clusteringAnimationInterval = setInterval(() => {
-    const fill = document.getElementById('hypatia-clustering-fill');
-    const statusMessage = document.getElementById('hypatia-status-message');
-
-    if (!fill) {
-      // Element not in DOM, stop animation
-      clearInterval(clusteringAnimationInterval);
-      clusteringAnimationInterval = null;
-      return;
-    }
-
-    // Increment progress (slow down as it approaches 90%)
-    if (progress < 90) {
-      const increment = Math.max(0.5, (90 - progress) / 30);
-      progress = Math.min(90, progress + increment);
-      fill.style.width = `${progress}%`;
-    }
-
-    // Rotate messages every ~2 seconds (interval is ~100ms, so every 20 ticks)
-    if (progress > 5 && Math.floor(progress) % 12 === 0) {
-      messageIndex = (messageIndex + 1) % CLUSTERING_MESSAGES.length;
-      const newMessage = CLUSTERING_MESSAGES[messageIndex];
-      if (statusMessage) statusMessage.textContent = newMessage;
-    }
-  }, 100);
-}
-
-function stopClusteringAnimation() {
-  if (clusteringAnimationInterval) {
-    clearInterval(clusteringAnimationInterval);
-    clusteringAnimationInterval = null;
-  }
-
-  // Complete the progress bar
-  const fill = document.getElementById('hypatia-clustering-fill');
-  if (fill) {
-    fill.style.width = '100%';
-  }
-}
-
-function getCompleteStep() {
-  const campaignCount = progressData.campaignsCreated || campaignsData.length || 0;
-
-  return `
-    <div class="hypatia-step hypatia-complete">
-      <div class="hypatia-success-icon">
-        <svg width="64" height="64" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="40" cy="40" r="38" stroke="#34a853" stroke-width="3" fill="none"/>
-          <path d="M24 40 L35 51 L56 30" stroke="#34a853" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      </div>
-
-      <h2 class="hypatia-title">Setup Complete!</h2>
-
-      <p class="hypatia-subtitle">
-        Analyzed <strong>${progressData.emailCount || progressData.current}</strong> emails
-        ${campaignCount > 0 ? `into <strong>${campaignCount}</strong> categories` : 'successfully'}.
-      </p>
-
-      <div class="hypatia-complete-info">
-        <p>
-          Hypatia has learned your writing style and grouped your emails into categories.
-        </p>
-      </div>
-
-      ${campaignCount > 0 ? `
-        <button class="hypatia-btn hypatia-btn-primary" id="hypatia-view-campaigns-btn">
-          View Email Categories
-        </button>
-
-        <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-done-btn">
-          Done
-        </button>
-      ` : `
-        <button class="hypatia-btn hypatia-btn-primary" id="hypatia-done-btn">
-          Done
-        </button>
-      `}
-    </div>
-  `;
-}
+// Note: Onboarding step functions (getWelcomeStep, getProgressStep,
+// startClusteringAnimation, stopClusteringAnimation, getCompleteStep,
+// CLUSTERING_MESSAGES) are now defined in onboarding.js
 
 function getCampaignsStep() {
-  // Use real data if available, otherwise show dummy campaigns for testing
-  const allCampaigns = campaignsData.length > 0 ? campaignsData : getDummyCampaigns();
-  const isUsingDummyData = campaignsData.length === 0;
+  // Use real data from Supabase - no dummy data fallback
+  const allCampaigns = campaignsData;
+  const isUsingDummyData = false;
 
   // Calculate pagination
   const totalCampaigns = allCampaigns.length;
@@ -926,6 +655,115 @@ function escapeHtml(str) {
 function truncate(str, len) {
   if (!str) return '';
   return str.length > len ? str.substring(0, len) + '...' : str;
+}
+
+function ensureAbsoluteUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  return 'https://' + url;
+}
+
+// =============================================================================
+// LEADS/TEMPLATES GROUPING HELPERS
+// =============================================================================
+
+function formatRelativeTime(dateString) {
+  /**
+   * Convert ISO date string to relative time (e.g., "2 days ago")
+   */
+  if (!dateString) return 'Unknown';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) > 1 ? 's' : ''} ago`;
+  return `${Math.floor(diffDays / 365)} year${Math.floor(diffDays / 365) > 1 ? 's' : ''} ago`;
+}
+
+function deriveTemplateName(subject) {
+  /**
+   * Derive a human-readable template name from subject line.
+   * Returns first 3-4 words or a default name.
+   */
+  if (!subject) return 'Untitled Template';
+
+  // Remove common email prefixes
+  const cleaned = subject.replace(/^(re:|fwd:|fw:)\s*/gi, '').trim();
+  const words = cleaned.split(/\s+/);
+
+  if (words.length <= 4) return cleaned;
+  return words.slice(0, 4).join(' ') + '...';
+}
+
+function groupDataByCampaign(items) {
+  /**
+   * Groups leads or templates by campaign_id.
+   * Returns array of { campaign: {...}, items: [...] } objects.
+   * Items without campaign_id go into an "Uncategorized" group.
+   */
+  const grouped = {};
+  const uncategorized = [];
+
+  items.forEach(item => {
+    const campaignId = item.campaign_id;
+    if (campaignId) {
+      if (!grouped[campaignId]) {
+        grouped[campaignId] = [];
+      }
+      grouped[campaignId].push(item);
+    } else {
+      uncategorized.push(item);
+    }
+  });
+
+  // Match with campaign data from campaignsData global
+  const result = [];
+
+  Object.keys(grouped).forEach(campaignId => {
+    const campaign = campaignsData.find(c => String(c.id) === String(campaignId));
+    result.push({
+      campaign: campaign || { id: campaignId, representative_subject: 'Unknown Campaign' },
+      items: grouped[campaignId]
+    });
+  });
+
+  // Add uncategorized group if any
+  if (uncategorized.length > 0) {
+    result.push({
+      campaign: { id: null, representative_subject: 'Uncategorized' },
+      items: uncategorized
+    });
+  }
+
+  return result;
+}
+
+function getLoadingPlaceholder(type) {
+  return `
+    <div class="hypatia-step hypatia-campaigns">
+      <div class="hypatia-campaigns-header">
+        <div class="hypatia-campaigns-header-left">
+          <h2 class="hypatia-title">${type === 'leads' ? 'Leads' : 'Templates'}</h2>
+          <p class="hypatia-subtitle">Loading...</p>
+        </div>
+        <div class="hypatia-header-buttons">
+          <button class="hypatia-btn hypatia-btn-add-campaign" id="hypatia-${type}-close-btn">
+            Close
+          </button>
+        </div>
+      </div>
+      <div class="hypatia-grouped-content">
+        <div class="hypatia-loading-spinner"></div>
+      </div>
+    </div>
+  `;
 }
 
 // =============================================================================
@@ -1108,7 +946,7 @@ function getDummySentEmails() {
 // =============================================================================
 
 function getCampaignDetailStep() {
-  const campaign = selectedCampaign || getDummyCampaigns()[0];
+  const campaign = selectedCampaign;
 
   // Get full descriptions - prefer style_prompt over style_description for full detail
   const emailStyleFull = campaign.style_prompt || campaign.style_description || '';
@@ -1189,8 +1027,16 @@ function getCampaignDetailStep() {
       </div>
 
       <!-- Bottom action buttons -->
-      <div class="hypatia-campaign-actions">
-        <button class="hypatia-btn hypatia-btn-primary hypatia-btn-lg" id="hypatia-continue-campaign">
+      <div class="hypatia-campaign-actions" style="display: flex; gap: 12px;">
+        <button class="hypatia-btn hypatia-btn-secondary hypatia-btn-lg" id="hypatia-save-campaign" style="width: auto; flex: 1; margin-top: 0;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
+          Save
+        </button>
+        <button class="hypatia-btn hypatia-btn-primary hypatia-btn-lg" id="hypatia-continue-campaign" style="width: auto; flex: 2;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
@@ -1206,7 +1052,7 @@ function getCampaignDetailStep() {
 // =============================================================================
 
 function getLeadsStep() {
-  const campaign = selectedCampaign || getDummyCampaigns()[0];
+  const campaign = selectedCampaign;
   const leads = currentLeads.length > 0 ? currentLeads : [];
   const hasLeads = leads.length > 0;
 
@@ -1223,7 +1069,14 @@ function getLeadsStep() {
               ${lead.name ? lead.name.charAt(0).toUpperCase() : '?'}
             </div>
             <div class="hypatia-lead-info">
-              <div class="hypatia-lead-name">${escapeHtml(lead.name || 'Unknown')}</div>
+              <div class="hypatia-lead-name">
+                ${escapeHtml(lead.name || 'Unknown')}
+                ${lead.linkedin_url ? `<a href="${escapeHtml(ensureAbsoluteUrl(lead.linkedin_url))}" target="_blank" class="hypatia-lead-linkedin" title="View LinkedIn profile">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                  </svg>
+                </a>` : ''}
+              </div>
               <div class="hypatia-lead-email">${escapeHtml(lead.email || 'No email')}</div>
             </div>
             <div class="hypatia-lead-meta">
@@ -1284,16 +1137,24 @@ function getLeadsStep() {
           <textarea
             class="hypatia-leads-textarea"
             id="hypatia-leads-query"
-            placeholder="e.g., Find me 50 CTOs at YC-backed startups in San Francisco..."
+            placeholder="e.g., CTOs at YC-backed startups in San Francisco, Marketing directors at e-commerce companies..."
             rows="3"
-          ></textarea>
-          <button class="hypatia-btn hypatia-btn-generate" id="hypatia-generate-leads">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"/>
-              <path d="M21 21l-4.35-4.35"/>
-            </svg>
-            Generate Leads
-          </button>
+          >${escapeHtml(campaign.contact_description || '')}</textarea>
+          <div class="hypatia-leads-controls">
+            <select class="hypatia-leads-limit-select" id="hypatia-leads-limit">
+              <option value="10">10 leads</option>
+              <option value="25" selected>25 leads</option>
+              <option value="50">50 leads</option>
+              <option value="100">100 leads</option>
+            </select>
+            <button class="hypatia-btn hypatia-btn-generate" id="hypatia-generate-leads">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35"/>
+              </svg>
+              Generate Leads
+            </button>
+          </div>
         </div>
         <p class="hypatia-input-hint">Be specific about role, company type, location, or any other criteria</p>
       </div>
@@ -1343,13 +1204,292 @@ function getLeadsStep() {
 }
 
 // =============================================================================
+// GENERATING STEP (Parallel Leads + Template)
+// =============================================================================
+
+function getGeneratingStep() {
+  const campaign = selectedCampaign;
+  const { leadsLoading, templateLoading, cadenceLoading, leadsResult, templateResult, cadenceResult, leadsError, templateError, cadenceError } = parallelGenerationState;
+
+  // Determine leads display state
+  let leadsContent;
+  if (leadsLoading) {
+    leadsContent = `
+      <div class="hypatia-generating-section-loading">
+        <div class="hypatia-spinner"></div>
+        <p>Finding leads matching: "${escapeHtml(campaign?.contact_description || 'your criteria')}"</p>
+      </div>
+    `;
+  } else if (leadsError) {
+    leadsContent = `
+      <div class="hypatia-generating-section-error">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c5221f" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="15" y1="9" x2="9" y2="15"/>
+          <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        <p>Failed to generate leads: ${escapeHtml(leadsError)}</p>
+        <button class="hypatia-btn hypatia-btn-secondary hypatia-retry-leads">Retry</button>
+      </div>
+    `;
+  } else if (leadsResult && leadsResult.leads) {
+    const leads = leadsResult.leads;
+    leadsContent = `
+      <div class="hypatia-generating-section-success">
+        <div class="hypatia-success-header">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#137333" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <span>Found ${leads.length} leads</span>
+        </div>
+        <div class="hypatia-mini-leads-list">
+          ${leads.map(lead => `
+            <div class="hypatia-mini-lead">
+              <div class="hypatia-mini-lead-avatar">${lead.name ? lead.name.charAt(0).toUpperCase() : '?'}</div>
+              <div class="hypatia-mini-lead-info">
+                <span class="hypatia-mini-lead-name">
+                  ${escapeHtml(lead.name || 'Unknown')}
+                  ${lead.linkedin_url ? `<a href="${escapeHtml(ensureAbsoluteUrl(lead.linkedin_url))}" target="_blank" class="hypatia-lead-linkedin" title="View LinkedIn profile">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                    </svg>
+                  </a>` : ''}
+                </span>
+                <span class="hypatia-mini-lead-email">${escapeHtml(lead.email || 'No email')}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } else {
+    leadsContent = `<div class="hypatia-generating-section-pending">Waiting to start...</div>`;
+  }
+
+  // Determine template display state
+  let templateContent;
+  if (templateLoading) {
+    templateContent = `
+      <div class="hypatia-generating-section-loading">
+        <div class="hypatia-spinner"></div>
+        <p>Generating email template using AI...</p>
+      </div>
+    `;
+  } else if (templateError) {
+    templateContent = `
+      <div class="hypatia-generating-section-error">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c5221f" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="15" y1="9" x2="9" y2="15"/>
+          <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        <p>Failed to generate template: ${escapeHtml(templateError)}</p>
+        <button class="hypatia-btn hypatia-btn-secondary hypatia-retry-template">Retry</button>
+      </div>
+    `;
+  } else if (templateResult && templateResult.template) {
+    const template = templateResult.template;
+    // Sync to currentTemplate if not already done
+    if (!currentTemplate.subject && template.subject) {
+      currentTemplate.subject = template.subject;
+      currentTemplate.body = template.body || '';
+    }
+    templateContent = `
+      <div class="hypatia-generating-section-success hypatia-template-editable">
+        <div class="hypatia-success-header">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#137333" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <span>Template ready</span>
+        </div>
+        <div class="hypatia-inline-template-editor">
+          <div class="hypatia-inline-template-field">
+            <label class="hypatia-inline-label">Subject</label>
+            <input type="text" class="hypatia-inline-input" id="hypatia-inline-template-subject" value="${escapeHtml(currentTemplate.subject || template.subject || '')}" placeholder="Email subject..." />
+          </div>
+          <div class="hypatia-inline-template-field">
+            <label class="hypatia-inline-label">Body</label>
+            <textarea class="hypatia-inline-textarea" id="hypatia-inline-template-body" rows="6" placeholder="Email body...">${escapeHtml(currentTemplate.body || template.body || '')}</textarea>
+          </div>
+          <div class="hypatia-inline-variables">
+            <span class="hypatia-inline-variables-label">Variables:</span>
+            <button class="hypatia-inline-var-chip" data-var="{{first_name}}">{{first_name}}</button>
+            <button class="hypatia-inline-var-chip" data-var="{{last_name}}">{{last_name}}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    templateContent = `<div class="hypatia-generating-section-pending">Waiting to start...</div>`;
+  }
+
+  // Determine cadence display state
+  let cadenceContent;
+  if (cadenceLoading) {
+    cadenceContent = `
+      <div class="hypatia-generating-section-loading">
+        <div class="hypatia-spinner"></div>
+        <p>Generating email sequence...</p>
+      </div>
+    `;
+  } else if (cadenceError) {
+    cadenceContent = `
+      <div class="hypatia-generating-section-error">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c5221f" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="15" y1="9" x2="9" y2="15"/>
+          <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        <p>Failed to generate sequence: ${escapeHtml(cadenceError)}</p>
+        <button class="hypatia-btn hypatia-btn-secondary hypatia-retry-cadence">Retry</button>
+      </div>
+    `;
+  } else if (cadenceResult && cadenceResult.cadence) {
+    const cadence = cadenceResult.cadence;
+    cadenceContent = `
+      <div class="hypatia-generating-section-success">
+        <div class="hypatia-success-header">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#137333" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <span>${cadence.length}-day email sequence</span>
+        </div>
+        <div class="hypatia-cadence-timeline">
+          ${cadence.map((email, i) => `
+            <div class="hypatia-cadence-item ${email.email_type === 'initial' ? 'initial' : 'followup'}"
+                 data-cadence-index="${i}" data-cadence-id="${email.id || ''}">
+              <div class="hypatia-cadence-day">
+                <span class="hypatia-cadence-day-badge">Day ${email.day_number}</span>
+                <button class="hypatia-cadence-timing-btn" title="Change timing">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="hypatia-cadence-content">
+                <div class="hypatia-cadence-type">${email.email_type === 'initial' ? 'Initial Outreach' : `Follow-up #${i}`}</div>
+                <div class="hypatia-cadence-subject">${escapeHtml(email.subject || '')}</div>
+                <div class="hypatia-cadence-preview">${escapeHtml((email.body || '').substring(0, 80))}...</div>
+              </div>
+              <div class="hypatia-cadence-actions">
+                <button class="hypatia-cadence-edit-btn" title="Edit email">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+                <button class="hypatia-cadence-regenerate-btn" title="Regenerate">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } else {
+    cadenceContent = `<div class="hypatia-generating-section-pending">Waiting to start...</div>`;
+  }
+
+  // Determine if all complete
+  const allComplete = !leadsLoading && !templateLoading && !cadenceLoading &&
+    (leadsResult || leadsError) && (templateResult || templateError) && (cadenceResult || cadenceError);
+  const hasAnySuccess = (leadsResult && leadsResult.leads && leadsResult.leads.length > 0) ||
+    (templateResult && templateResult.template) || (cadenceResult && cadenceResult.cadence);
+
+  return `
+    <div class="hypatia-step hypatia-generating-screen">
+      <div class="hypatia-detail-header">
+        <button class="hypatia-back-btn" id="hypatia-back-to-campaign">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          <span>Back to Campaign</span>
+        </button>
+      </div>
+
+      <div class="hypatia-generating-hero">
+        <div class="hypatia-page-badge">Preparing Campaign</div>
+        <h1 class="hypatia-page-title">${allComplete ? 'Campaign Ready' : 'Setting Up Your Campaign'}</h1>
+        <p class="hypatia-page-subtitle">
+          ${allComplete ? 'Review your leads, template, and email sequence below' : 'Generating leads, template, and email sequence in parallel...'}
+        </p>
+      </div>
+
+      <div class="hypatia-generating-grid">
+        <div class="hypatia-generating-section hypatia-generating-leads ${leadsLoading ? 'loading' : ''} ${leadsResult ? 'complete' : ''} ${leadsError ? 'error' : ''}">
+          <div class="hypatia-generating-section-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <h3>Contacts</h3>
+          </div>
+          ${leadsContent}
+        </div>
+
+        <div class="hypatia-generating-section hypatia-generating-template ${templateLoading ? 'loading' : ''} ${templateResult ? 'complete' : ''} ${templateError ? 'error' : ''}">
+          <div class="hypatia-generating-section-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            <h3>Template</h3>
+          </div>
+          ${templateContent}
+        </div>
+
+        <div class="hypatia-generating-section hypatia-generating-cadence ${cadenceLoading ? 'loading' : ''} ${cadenceResult ? 'complete' : ''} ${cadenceError ? 'error' : ''}">
+          <div class="hypatia-generating-section-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <h3>Email Sequence</h3>
+          </div>
+          ${cadenceContent}
+        </div>
+      </div>
+
+      ${allComplete && hasAnySuccess ? `
+        <div class="hypatia-generating-footer">
+          <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-view-leads-detail">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+            </svg>
+            Edit Leads
+          </button>
+          <button class="hypatia-btn hypatia-btn-primary" id="hypatia-proceed-to-send">
+            Review & Send
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// =============================================================================
 // TEMPLATE STEP
 // =============================================================================
 
 function getTemplateStep() {
-  const campaign = selectedCampaign || getDummyCampaigns()[0];
-  const leads = currentLeads.length > 0 ? currentLeads : getDummyLeads();
-  const previewLead = leads[0] || { name: 'John Doe', email: 'john@example.com', company: 'Acme Inc', title: 'CEO' };
+  const campaign = selectedCampaign;
+  const leads = currentLeads;
+  // Use first lead for preview, or a sample lead if no leads yet
+  const sampleLead = { name: 'John Doe', first_name: 'John', last_name: 'Doe', email: 'john@example.com', company: 'Acme Inc', title: 'CEO' };
+  const previewLead = leads[0] || sampleLead;
 
   // Generate default template if not set
   if (!currentTemplate.subject) {
@@ -1413,8 +1553,6 @@ Best,
             <div class="hypatia-variable-chips">
               <button class="hypatia-variable-chip" data-var="{{first_name}}">{{first_name}}</button>
               <button class="hypatia-variable-chip" data-var="{{last_name}}">{{last_name}}</button>
-              <button class="hypatia-variable-chip" data-var="{{company}}">{{company}}</button>
-              <button class="hypatia-variable-chip" data-var="{{title}}">{{title}}</button>
             </div>
             <p class="hypatia-variables-hint">Click to insert at cursor position</p>
           </div>
@@ -1476,6 +1614,12 @@ Best,
         <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-back-to-leads-btn">
           Back to Leads
         </button>
+        <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-regenerate-template">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+          </svg>
+          Regenerate with AI
+        </button>
         <button class="hypatia-btn hypatia-btn-primary" id="hypatia-save-and-send">
           Save & Review Sending
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1510,8 +1654,8 @@ function replaceTemplateVariables(text, lead) {
 // =============================================================================
 
 function getSentStep() {
-  const campaign = selectedCampaign || getDummyCampaigns()[0];
-  const sentEmails = campaign.sent_emails?.length > 0 ? campaign.sent_emails : getDummySentEmails();
+  const campaign = selectedCampaign;
+  const sentEmails = campaign?.sent_emails || [];
 
   const stats = {
     total: sentEmails.length,
@@ -1660,33 +1804,7 @@ function getSentStep() {
   `;
 }
 
-function getErrorStep() {
-  return `
-    <div class="hypatia-step hypatia-error">
-      <div class="hypatia-error-icon">
-        <svg width="64" height="64" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="40" cy="40" r="38" stroke="#ea4335" stroke-width="3" fill="none"/>
-          <line x1="28" y1="28" x2="52" y2="52" stroke="#ea4335" stroke-width="4" stroke-linecap="round"/>
-          <line x1="52" y1="28" x2="28" y2="52" stroke="#ea4335" stroke-width="4" stroke-linecap="round"/>
-        </svg>
-      </div>
-
-      <h2 class="hypatia-title">Something Went Wrong</h2>
-
-      <p class="hypatia-subtitle hypatia-error-message">
-        ${progressData.message || 'An unexpected error occurred.'}
-      </p>
-
-      <button class="hypatia-btn hypatia-btn-primary" id="hypatia-retry-btn">
-        Try Again
-      </button>
-
-      <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-cancel-btn">
-        Cancel
-      </button>
-    </div>
-  `;
-}
+// Note: getErrorStep is now in onboarding.js
 
 // =============================================================================
 // DASHBOARD STEP
@@ -1790,6 +1908,423 @@ async function loadDashboardData() {
   }
 }
 
+// =============================================================================
+// LEADS LIST STEP (ASYNC - FETCHES FROM SUPABASE)
+// =============================================================================
+
+// Cache for leads/templates data
+let _cachedLeadsData = null;
+let _cachedTemplatesData = null;
+
+async function fetchLeadsData() {
+  /**
+   * Fetch leads from Supabase via background script.
+   */
+  if (_cachedLeadsData !== null) {
+    return _cachedLeadsData;
+  }
+
+  // Ensure we have a valid userId
+  let userId = currentUserId;
+  if (!userId) {
+    const status = await new Promise(resolve => {
+      chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' }, resolve);
+    });
+    if (status && status.userId) {
+      currentUserId = status.userId;
+      userId = status.userId;
+    } else {
+      console.warn('[Hypatia] No user ID available, cannot fetch leads');
+      _cachedLeadsData = [];
+      return _cachedLeadsData;
+    }
+  }
+
+  const response = await new Promise(resolve => {
+    chrome.runtime.sendMessage({
+      action: 'getSavedLeads',
+      userId: userId,
+      campaignId: null  // Get all leads
+    }, resolve);
+  });
+
+  if (response && response.success) {
+    _cachedLeadsData = response.leads || [];
+  } else {
+    _cachedLeadsData = [];
+  }
+
+  return _cachedLeadsData;
+}
+
+async function fetchTemplatesData() {
+  /**
+   * Fetch templates from Supabase via background script.
+   */
+  if (_cachedTemplatesData !== null) {
+    return _cachedTemplatesData;
+  }
+
+  // Ensure we have a valid userId
+  let userId = currentUserId;
+  if (!userId) {
+    const status = await new Promise(resolve => {
+      chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' }, resolve);
+    });
+    if (status && status.userId) {
+      currentUserId = status.userId;
+      userId = status.userId;
+    } else {
+      console.warn('[Hypatia] No user ID available, cannot fetch templates');
+      _cachedTemplatesData = [];
+      return _cachedTemplatesData;
+    }
+  }
+
+  const response = await new Promise(resolve => {
+    chrome.runtime.sendMessage({
+      action: 'getAllTemplates',
+      userId: userId
+    }, resolve);
+  });
+
+  if (response && response.success) {
+    _cachedTemplatesData = response.templates || [];
+  } else {
+    _cachedTemplatesData = [];
+  }
+
+  return _cachedTemplatesData;
+}
+
+function clearLeadsCache() {
+  _cachedLeadsData = null;
+}
+
+function clearTemplatesCache() {
+  _cachedTemplatesData = null;
+}
+
+function renderLeadCard(lead) {
+  const statusClass = (lead.status || 'new').toLowerCase();
+  const displayName = lead.full_name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || lead.email;
+  const lastContacted = lead.contacted_at ? formatRelativeTime(lead.contacted_at) : formatRelativeTime(lead.created_at);
+
+  return `
+    <div class="hypatia-campaign-card hypatia-lead-card" data-lead-id="${lead.id}" data-lead-json="${escapeHtml(JSON.stringify(lead))}">
+      <div class="hypatia-campaign-card-header">
+        <span class="hypatia-lead-status hypatia-status-${statusClass}">${escapeHtml(lead.status || 'New')}</span>
+      </div>
+      <div class="hypatia-campaign-card-title">${escapeHtml(displayName)}</div>
+      <div class="hypatia-campaign-card-recipient-cycling">
+        <span class="hypatia-cycling-email">${escapeHtml(lead.email || '')}</span>
+      </div>
+      <div class="hypatia-campaign-analysis">
+        <div class="hypatia-campaign-analysis-row">
+          <span class="hypatia-analysis-icon"><strong>Company:</strong></span>
+          <span class="hypatia-analysis-text">${escapeHtml(lead.company || 'N/A')}</span>
+        </div>
+        <div class="hypatia-campaign-analysis-row">
+          <span class="hypatia-analysis-icon"><strong>Last Contact:</strong></span>
+          <span class="hypatia-analysis-text">${escapeHtml(lastContacted)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderTemplateCard(template) {
+  const templateName = deriveTemplateName(template.subject);
+  const createdDate = formatRelativeTime(template.created_at);
+
+  return `
+    <div class="hypatia-campaign-card hypatia-template-card" data-template-id="${template.id}" data-campaign-id="${template.campaign_id}" data-template-json="${escapeHtml(JSON.stringify(template))}">
+      <div class="hypatia-campaign-card-header">
+        <span class="hypatia-campaign-count">1</span>
+      </div>
+      <div class="hypatia-campaign-card-title">${escapeHtml(templateName)}</div>
+      <div class="hypatia-campaign-card-recipient-cycling">
+        <span class="hypatia-cycling-email">${escapeHtml(truncate(template.subject, 50))}</span>
+      </div>
+      <div class="hypatia-campaign-analysis">
+        <div class="hypatia-campaign-analysis-row">
+          <span class="hypatia-analysis-icon"><strong>CTA:</strong></span>
+          <span class="hypatia-analysis-text">${escapeHtml(template.cta_used || 'N/A')}</span>
+        </div>
+        <div class="hypatia-campaign-analysis-row">
+          <span class="hypatia-analysis-icon"><strong>Created:</strong></span>
+          <span class="hypatia-analysis-text">${escapeHtml(createdDate)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function getLeadsListStep() {
+  const leads = await fetchLeadsData();
+  const groupedLeads = groupDataByCampaign(leads);
+
+  let contentHtml = '';
+
+  if (groupedLeads.length === 0) {
+    contentHtml = '<p class="hypatia-no-campaigns">No leads found. Generate leads from a campaign to get started.</p>';
+  } else {
+    contentHtml = groupedLeads.map(group => {
+      const campaignTitle = group.campaign.representative_subject || 'Untitled Campaign';
+      const leadCardsHtml = group.items.map(lead => renderLeadCard(lead)).join('');
+
+      return `
+        <div class="hypatia-campaign-group">
+          <div class="hypatia-campaign-group-header">
+            <h3 class="hypatia-campaign-group-title">${escapeHtml(truncate(campaignTitle, 60))}</h3>
+            <span class="hypatia-campaign-group-count">${group.items.length} lead${group.items.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="hypatia-campaigns-grid">
+            ${leadCardsHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  return `
+    <div class="hypatia-step hypatia-campaigns">
+      <div class="hypatia-campaigns-header">
+        <div class="hypatia-campaigns-header-left">
+          <h2 class="hypatia-title">Leads</h2>
+          <p class="hypatia-subtitle">Manage your contacts and leads by campaign</p>
+        </div>
+        <div class="hypatia-header-buttons">
+          <button class="hypatia-btn hypatia-btn-add-campaign" id="hypatia-add-lead-btn">
+            + Add New Lead
+          </button>
+          <button class="hypatia-btn hypatia-btn-add-campaign" id="hypatia-leads-close-btn">
+            Close
+          </button>
+        </div>
+      </div>
+
+      <div class="hypatia-grouped-content">
+        ${contentHtml}
+      </div>
+    </div>
+  `;
+}
+
+// =============================================================================
+// TEMPLATES LIST STEP (ASYNC - FETCHES FROM SUPABASE)
+// =============================================================================
+
+async function getTemplatesListStep() {
+  const templates = await fetchTemplatesData();
+  const groupedTemplates = groupDataByCampaign(templates);
+
+  let contentHtml = '';
+
+  if (groupedTemplates.length === 0) {
+    contentHtml = '<p class="hypatia-no-campaigns">No templates found. Generate a template from a campaign to get started.</p>';
+  } else {
+    contentHtml = groupedTemplates.map(group => {
+      const campaignTitle = group.campaign.representative_subject || 'Untitled Campaign';
+      const templateCardsHtml = group.items.map(template => renderTemplateCard(template)).join('');
+
+      return `
+        <div class="hypatia-campaign-group">
+          <div class="hypatia-campaign-group-header">
+            <h3 class="hypatia-campaign-group-title">${escapeHtml(truncate(campaignTitle, 60))}</h3>
+            <span class="hypatia-campaign-group-count">${group.items.length} template${group.items.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="hypatia-campaigns-grid">
+            ${templateCardsHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  return `
+    <div class="hypatia-step hypatia-campaigns">
+      <div class="hypatia-campaigns-header">
+        <div class="hypatia-campaigns-header-left">
+          <h2 class="hypatia-title">Templates</h2>
+          <p class="hypatia-subtitle">Manage your email templates by campaign</p>
+        </div>
+        <div class="hypatia-header-buttons">
+          <button class="hypatia-btn hypatia-btn-add-campaign" id="hypatia-add-template-btn">
+            + Add New Template
+          </button>
+          <button class="hypatia-btn hypatia-btn-add-campaign" id="hypatia-templates-close-btn">
+            Close
+          </button>
+        </div>
+      </div>
+
+      <div class="hypatia-grouped-content">
+        ${contentHtml}
+      </div>
+    </div>
+  `;
+}
+
+async function loadAsyncStepContent(step) {
+  /**
+   * Load content for async steps (leads_list, templates_list)
+   * and update the panel content area.
+   */
+  let content = '';
+
+  if (step === 'leads_list') {
+    content = await getLeadsListStep();
+  } else if (step === 'templates_list') {
+    content = await getTemplatesListStep();
+  }
+
+  const contentArea = document.querySelector('.hypatia-panel-content');
+  if (contentArea && content) {
+    contentArea.innerHTML = content;
+    // Re-attach event listeners for the new content
+    attachEventListeners();
+  }
+}
+
+// =============================================================================
+// LEAD/TEMPLATE DETAIL MODALS
+// =============================================================================
+
+function showLeadDetailModal(leadData) {
+  const displayName = leadData.full_name || `${leadData.first_name || ''} ${leadData.last_name || ''}`.trim() || 'Unknown';
+  const statusClass = (leadData.status || 'new').toLowerCase();
+  const createdDate = formatRelativeTime(leadData.created_at);
+
+  const modalHtml = `
+    <div class="hypatia-detail-modal-overlay" id="hypatia-detail-modal">
+      <div class="hypatia-detail-modal">
+        <div class="hypatia-detail-modal-header">
+          <h3>Lead Details</h3>
+          <button class="hypatia-modal-close" id="hypatia-close-detail-modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="hypatia-detail-modal-body">
+          <div class="hypatia-detail-row hypatia-detail-name-row">
+            <span class="hypatia-detail-avatar">${displayName.charAt(0).toUpperCase()}</span>
+            <div class="hypatia-detail-name-info">
+              <span class="hypatia-detail-name">${escapeHtml(displayName)}</span>
+              <span class="hypatia-lead-status hypatia-status-${statusClass}">${escapeHtml(leadData.status || 'New')}</span>
+            </div>
+          </div>
+          <div class="hypatia-detail-grid">
+            <div class="hypatia-detail-item">
+              <span class="hypatia-detail-label">Email</span>
+              <span class="hypatia-detail-value">${escapeHtml(leadData.email || 'N/A')}</span>
+            </div>
+            <div class="hypatia-detail-item">
+              <span class="hypatia-detail-label">Company</span>
+              <span class="hypatia-detail-value">${escapeHtml(leadData.company || 'N/A')}</span>
+            </div>
+            <div class="hypatia-detail-item">
+              <span class="hypatia-detail-label">Title</span>
+              <span class="hypatia-detail-value">${escapeHtml(leadData.title || 'N/A')}</span>
+            </div>
+            <div class="hypatia-detail-item">
+              <span class="hypatia-detail-label">Location</span>
+              <span class="hypatia-detail-value">${escapeHtml(leadData.location || 'N/A')}</span>
+            </div>
+            <div class="hypatia-detail-item">
+              <span class="hypatia-detail-label">Source</span>
+              <span class="hypatia-detail-value">${escapeHtml(leadData.source || 'N/A')}</span>
+            </div>
+            <div class="hypatia-detail-item">
+              <span class="hypatia-detail-label">Added</span>
+              <span class="hypatia-detail-value">${escapeHtml(createdDate)}</span>
+            </div>
+          </div>
+          ${leadData.linkedin_url ? `
+            <div class="hypatia-detail-actions">
+              <a href="${escapeHtml(ensureAbsoluteUrl(leadData.linkedin_url))}" target="_blank" class="hypatia-btn hypatia-btn-secondary">
+                View LinkedIn Profile
+              </a>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  // Attach close handlers
+  document.getElementById('hypatia-close-detail-modal')?.addEventListener('click', closeDetailModal);
+  document.getElementById('hypatia-detail-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'hypatia-detail-modal') {
+      closeDetailModal();
+    }
+  });
+}
+
+function showTemplateDetailModal(templateData) {
+  const templateName = deriveTemplateName(templateData.subject);
+  const createdDate = formatRelativeTime(templateData.created_at);
+
+  const modalHtml = `
+    <div class="hypatia-detail-modal-overlay" id="hypatia-detail-modal">
+      <div class="hypatia-detail-modal hypatia-template-detail-modal">
+        <div class="hypatia-detail-modal-header">
+          <h3>Template Details</h3>
+          <button class="hypatia-modal-close" id="hypatia-close-detail-modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="hypatia-detail-modal-body">
+          <div class="hypatia-detail-row">
+            <span class="hypatia-detail-label">Template Name</span>
+            <span class="hypatia-detail-value hypatia-detail-title">${escapeHtml(templateName)}</span>
+          </div>
+          <div class="hypatia-detail-row">
+            <span class="hypatia-detail-label">Subject Line</span>
+            <div class="hypatia-template-subject-box">${escapeHtml(templateData.subject || '')}</div>
+          </div>
+          <div class="hypatia-detail-row">
+            <span class="hypatia-detail-label">Email Body</span>
+            <div class="hypatia-template-body-box">${escapeHtml(templateData.body || '').replace(/\n/g, '<br>')}</div>
+          </div>
+          <div class="hypatia-detail-grid">
+            <div class="hypatia-detail-item">
+              <span class="hypatia-detail-label">CTA Used</span>
+              <span class="hypatia-detail-value">${escapeHtml(templateData.cta_used || 'N/A')}</span>
+            </div>
+            <div class="hypatia-detail-item">
+              <span class="hypatia-detail-label">Created</span>
+              <span class="hypatia-detail-value">${escapeHtml(createdDate)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  // Attach close handlers
+  document.getElementById('hypatia-close-detail-modal')?.addEventListener('click', closeDetailModal);
+  document.getElementById('hypatia-detail-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'hypatia-detail-modal') {
+      closeDetailModal();
+    }
+  });
+}
+
+function closeDetailModal() {
+  const modal = document.getElementById('hypatia-detail-modal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
 async function handleSignOut() {
   // Confirm sign out
   const confirmed = confirm('Are you sure you want to sign out of Hypatia? This will clear all cached data and you will need to re-authenticate.');
@@ -1841,167 +2376,17 @@ async function handleSignOut() {
   }
 }
 
-// =============================================================================
-// QUESTIONNAIRE STEPS
-// =============================================================================
 
-function getQuestionnaireStep() {
-  const question = QUESTIONNAIRE_QUESTIONS[questionnaireState.currentQuestion];
-  const isLastQuestion = questionnaireState.currentQuestion === QUESTIONNAIRE_QUESTIONS.length - 1;
-  const progress = ((questionnaireState.currentQuestion + 1) / QUESTIONNAIRE_QUESTIONS.length) * 100;
-
-  return `
-    <div class="hypatia-step hypatia-questionnaire">
-      <div class="hypatia-questionnaire-progress">
-        <div class="hypatia-questionnaire-progress-bar">
-          <div class="hypatia-questionnaire-progress-fill" style="width: ${progress}%"></div>
-        </div>
-        <span class="hypatia-questionnaire-progress-text">
-          Question ${questionnaireState.currentQuestion + 1} of ${QUESTIONNAIRE_QUESTIONS.length}
-        </span>
-      </div>
-
-      <h2 class="hypatia-title">${question.title}</h2>
-
-      ${question.hint ? `<p class="hypatia-hint">${question.hint}</p>` : ''}
-
-      <div class="hypatia-question-content">
-        ${getQuestionInput(question)}
-      </div>
-
-      <div class="hypatia-questionnaire-buttons">
-        ${questionnaireState.currentQuestion > 0 ? `
-          <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-prev-btn">
-            Back
-          </button>
-        ` : ''}
-        <button class="hypatia-btn hypatia-btn-primary" id="hypatia-next-btn">
-          ${isLastQuestion ? 'Finish' : 'Next'}
-        </button>
-      </div>
-
-      ${!question.required ? `
-        <button class="hypatia-btn-skip" id="hypatia-skip-btn">
-          Skip this question
-        </button>
-      ` : ''}
-    </div>
-  `;
-}
-
-function getQuestionInput(question) {
-  switch (question.type) {
-    case 'name_confirm':
-      return `
-        <div class="hypatia-name-confirm">
-          <input
-            type="text"
-            class="hypatia-input"
-            id="hypatia-name-input"
-            value="${escapeHtml(questionnaireState.answers.displayName || userDisplayName)}"
-            placeholder="Enter your name"
-          />
-        </div>
-      `;
-
-    case 'text':
-      const textValue = getAnswerValue(question.id);
-      return `
-        <textarea
-          class="hypatia-textarea"
-          id="hypatia-text-input"
-          placeholder="${question.placeholder || ''}"
-          rows="3"
-        >${escapeHtml(textValue)}</textarea>
-      `;
-
-    case 'select':
-      const selectValue = getAnswerValue(question.id);
-      return `
-        <div class="hypatia-select-options">
-          ${question.options.map(opt => `
-            <label class="hypatia-radio-label ${selectValue === opt.value ? 'selected' : ''}">
-              <input
-                type="radio"
-                name="hypatia-select"
-                value="${opt.value}"
-                ${selectValue === opt.value ? 'checked' : ''}
-              />
-              <span>${opt.label}</span>
-            </label>
-          `).join('')}
-        </div>
-      `;
-
-    default:
-      return '';
-  }
-}
-
-function getAnswerValue(questionId) {
-  const mapping = {
-    'purpose': 'appPurpose',
-    'userType': 'userType',
-    'ctas': 'generalCtas',
-    'contacts': 'contactTypes',
-    'referral': 'referralSource'
-  };
-  return questionnaireState.answers[mapping[questionId]] || '';
-}
-
-function getBackendStatusIndicator() {
-  if (backendState.isComplete) {
-    return `
-      <div class="hypatia-backend-complete">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34a853" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M8 12 L11 15 L16 10"/>
-        </svg>
-        <span>Email analysis complete</span>
-      </div>
-    `;
-  }
-  return `
-    <div class="hypatia-backend-processing">
-      <div class="hypatia-mini-spinner"></div>
-      <span>Analyzing emails in background...</span>
-    </div>
-  `;
-}
-
-function getWaitingStep() {
-  return `
-    <div class="hypatia-step hypatia-waiting">
-      <div class="hypatia-spinner-container">
-        <div class="hypatia-spinner"></div>
-      </div>
-
-      <h2 class="hypatia-title">Almost Done!</h2>
-
-      <p class="hypatia-subtitle">
-        Thank you for completing the questionnaire. We're finishing up the email analysis...
-      </p>
-
-      <div class="hypatia-waiting-animation">
-        <div class="hypatia-pulse-dot"></div>
-        <div class="hypatia-pulse-dot"></div>
-        <div class="hypatia-pulse-dot"></div>
-      </div>
-
-      <p class="hypatia-hint">
-        This usually takes just a few more seconds.
-      </p>
-    </div>
-  `;
-}
+// Note: Questionnaire step functions (getQuestionnaireStep, getQuestionInput,
+// getAnswerValue, getBackendStatusIndicator, getWaitingStep) are now in onboarding.js
 
 function updatePanelContent() {
   console.log('[Hypatia] updatePanelContent() called, currentStep:', currentStep);
   const content = document.querySelector('.hypatia-panel-content');
   if (content) {
     content.innerHTML = getStepContent();
-    // Use full-width layout for campaigns and campaign_detail views
-    if (currentStep === 'campaigns' || currentStep === 'campaign_detail') {
+    // Use full-width layout for main views
+    if (currentStep === 'campaigns' || currentStep === 'campaign_detail' || currentStep === 'leads' || currentStep === 'template' || currentStep === 'sent' || currentStep === 'generating') {
       content.classList.add('hypatia-fullwidth');
     } else {
       content.classList.remove('hypatia-fullwidth');
@@ -2081,13 +2466,41 @@ function attachEventListeners() {
     });
   });
 
-  // Campaign card clicks
-  const campaignCards = document.querySelectorAll('.hypatia-campaign-card');
+  // Campaign card clicks (only for actual campaign cards, not lead/template cards in list views)
+  const campaignCards = document.querySelectorAll('.hypatia-campaign-card:not(.hypatia-lead-card):not(.hypatia-template-card)');
   campaignCards.forEach(card => {
     card.addEventListener('click', () => {
       stopEmailCycling(); // Stop cycling when clicking a card
       const campaignId = card.dataset.campaignId;
       handleCampaignCardClick(campaignId);
+    });
+  });
+
+  // Lead card clicks in leads_list view - show detail modal
+  const leadCards = document.querySelectorAll('.hypatia-lead-card[data-lead-json]');
+  leadCards.forEach(card => {
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      try {
+        const leadData = JSON.parse(card.dataset.leadJson);
+        showLeadDetailModal(leadData);
+      } catch (err) {
+        console.error('[Hypatia] Error parsing lead data:', err);
+      }
+    });
+  });
+
+  // Template card clicks in templates_list view - show detail modal
+  const templateCards = document.querySelectorAll('.hypatia-template-card[data-template-json]');
+  templateCards.forEach(card => {
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      try {
+        const templateData = JSON.parse(card.dataset.templateJson);
+        showTemplateDetailModal(templateData);
+      } catch (err) {
+        console.error('[Hypatia] Error parsing template data:', err);
+      }
     });
   });
 
@@ -2108,6 +2521,18 @@ function attachEventListeners() {
     campaignsCloseBtn.addEventListener('click', navigateBack);
   }
 
+  // Close button in leads view
+  const leadsCloseBtn = document.getElementById('hypatia-leads-close-btn');
+  if (leadsCloseBtn) {
+    leadsCloseBtn.addEventListener('click', navigateBack);
+  }
+
+  // Close button in templates view
+  const templatesCloseBtn = document.getElementById('hypatia-templates-close-btn');
+  if (templatesCloseBtn) {
+    templatesCloseBtn.addEventListener('click', navigateBack);
+  }
+
   // Pagination buttons
   const prevPageBtn = document.getElementById('hypatia-prev-page');
   if (prevPageBtn) {
@@ -2123,6 +2548,12 @@ function attachEventListeners() {
   const backToCampaignsBtn = document.getElementById('hypatia-back-to-campaigns');
   if (backToCampaignsBtn) {
     backToCampaignsBtn.addEventListener('click', handleBackToCampaigns);
+  }
+
+  // Save Campaign button
+  const saveCampaignBtn = document.getElementById('hypatia-save-campaign');
+  if (saveCampaignBtn) {
+    saveCampaignBtn.addEventListener('click', handleSaveCampaign);
   }
 
   // Continue Campaign button
@@ -2204,6 +2635,11 @@ function attachEventListeners() {
     saveAndSendBtn.addEventListener('click', handleSaveAndSend);
   }
 
+  const regenerateBtn = document.getElementById('hypatia-regenerate-template');
+  if (regenerateBtn) {
+    regenerateBtn.addEventListener('click', handleRegenerateTemplate);
+  }
+
   // Variable chips
   const variableChips = document.querySelectorAll('.hypatia-variable-chip');
   variableChips.forEach(chip => {
@@ -2227,6 +2663,106 @@ function attachEventListeners() {
   if (currentStep === 'dashboard') {
     loadDashboardData();
   }
+
+  // Generating screen buttons
+  const retryLeadsBtn = document.querySelector('.hypatia-retry-leads');
+  if (retryLeadsBtn) {
+    retryLeadsBtn.addEventListener('click', handleRetryLeads);
+  }
+
+  const retryTemplateBtn = document.querySelector('.hypatia-retry-template');
+  if (retryTemplateBtn) {
+    retryTemplateBtn.addEventListener('click', handleRetryTemplate);
+  }
+
+  // Inline template editor listeners
+  const inlineSubject = document.getElementById('hypatia-inline-template-subject');
+  const inlineBody = document.getElementById('hypatia-inline-template-body');
+
+  if (inlineSubject) {
+    inlineSubject.addEventListener('input', (e) => {
+      currentTemplate.subject = e.target.value;
+    });
+  }
+
+  if (inlineBody) {
+    inlineBody.addEventListener('input', (e) => {
+      currentTemplate.body = e.target.value;
+    });
+  }
+
+  // Variable chip insertion for inline editor
+  const inlineVarChips = document.querySelectorAll('.hypatia-inline-var-chip');
+  inlineVarChips.forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      const varText = chip.dataset.var;
+      const bodyEl = document.getElementById('hypatia-inline-template-body');
+      if (bodyEl) {
+        const start = bodyEl.selectionStart;
+        const end = bodyEl.selectionEnd;
+        const text = bodyEl.value;
+        bodyEl.value = text.substring(0, start) + varText + text.substring(end);
+        bodyEl.selectionStart = bodyEl.selectionEnd = start + varText.length;
+        bodyEl.focus();
+        currentTemplate.body = bodyEl.value;
+      }
+    });
+  });
+
+  const retryCadenceBtn = document.querySelector('.hypatia-retry-cadence');
+  if (retryCadenceBtn) {
+    retryCadenceBtn.addEventListener('click', handleRetryCadence);
+  }
+
+  // Cadence item interactions
+  document.querySelectorAll('.hypatia-cadence-item').forEach((item, index) => {
+    // Regenerate button
+    const regenerateBtn = item.querySelector('.hypatia-cadence-regenerate-btn');
+    if (regenerateBtn) {
+      regenerateBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleCadenceEmailRegenerate(index);
+      });
+    }
+
+    // Timing change button
+    const timingBtn = item.querySelector('.hypatia-cadence-timing-btn');
+    if (timingBtn) {
+      timingBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showTimingPicker(index, e.target);
+      });
+    }
+
+    // Edit button
+    const editBtn = item.querySelector('.hypatia-cadence-edit-btn');
+    if (editBtn) {
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleCadenceEmailEdit(index);
+      });
+    }
+  });
+
+  const viewLeadsDetailBtn = document.getElementById('hypatia-view-leads-detail');
+  if (viewLeadsDetailBtn) {
+    viewLeadsDetailBtn.addEventListener('click', handleGotoLeads);
+  }
+
+  const proceedToSendBtn = document.getElementById('hypatia-proceed-to-send');
+  if (proceedToSendBtn) {
+    proceedToSendBtn.addEventListener('click', handleSaveAndSend);
+  }
+
+  // LinkedIn links - prevent Gmail from intercepting clicks
+  document.querySelectorAll('.hypatia-lead-linkedin').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.open(link.href, '_blank');
+      e.preventDefault();
+    });
+  });
 }
 
 function handleViewCampaigns() {
@@ -2280,14 +2816,12 @@ function handleDone() {
 // =============================================================================
 
 function handleCampaignCardClick(campaignId) {
-  // Find the campaign from data or use dummy data
-  let campaign;
-  if (campaignsData.length > 0) {
-    campaign = campaignsData.find(c => String(c.id) === String(campaignId)) || campaignsData[parseInt(campaignId)];
-  }
+  // Find the campaign from real data
+  let campaign = campaignsData.find(c => String(c.id) === String(campaignId)) || campaignsData[parseInt(campaignId)];
+
   if (!campaign) {
-    const dummyCampaigns = getDummyCampaigns();
-    campaign = dummyCampaigns.find(c => String(c.id) === String(campaignId)) || dummyCampaigns[parseInt(campaignId)] || dummyCampaigns[0];
+    console.error('[Hypatia] Campaign not found:', campaignId);
+    return;
   }
   selectedCampaign = campaign;
   currentLeads = campaign.leads || [];
@@ -2299,6 +2833,9 @@ function handleCampaignCardClick(campaignId) {
 
   // Update URL silently (without triggering hash change handler to re-render)
   history.replaceState(null, '', `#${HYPATIA_CAMPAIGN_HASH_PREFIX}${campaignId}`);
+
+  // Load saved AI-generated content in background
+  loadSavedCampaignContent(campaignId);
 }
 
 function handlePrevPage() {
@@ -2309,7 +2846,7 @@ function handlePrevPage() {
 }
 
 function handleNextPage() {
-  const allCampaigns = campaignsData.length > 0 ? campaignsData : getDummyCampaigns();
+  const allCampaigns = campaignsData;
   const totalPages = Math.ceil(allCampaigns.length / CAMPAIGNS_PER_PAGE);
   if (currentCampaignsPage < totalPages) {
     currentCampaignsPage++;
@@ -2394,8 +2931,107 @@ async function saveCampaignField(fieldName, value) {
   }
 }
 
+async function handleSaveCampaign() {
+  const ctaInput = document.getElementById('hypatia-cta-input');
+  const contactInput = document.getElementById('hypatia-contact-input');
+  const saveBtn = document.getElementById('hypatia-save-campaign');
+
+  if (!selectedCampaign) {
+    console.error('[Hypatia] No campaign selected to save');
+    return;
+  }
+
+  const fields = {};
+
+  if (ctaInput) {
+    selectedCampaign.cta_description = ctaInput.value;
+    fields.cta_description = ctaInput.value;
+  }
+  if (contactInput) {
+    selectedCampaign.contact_description = contactInput.value;
+    fields.contact_description = contactInput.value;
+  }
+
+  // Save to Supabase
+  if (Object.keys(fields).length > 0 && selectedCampaign.id && !selectedCampaign.id.toString().startsWith('new_')) {
+    // Update button to show saving state
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="hypatia-spin">
+          <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32"/>
+        </svg>
+        Saving...
+      `;
+    }
+
+    console.log('[Hypatia] Saving campaign to Supabase:', selectedCampaign.id, fields);
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'updateCampaign',
+        campaignId: selectedCampaign.id,
+        fields: fields
+      });
+      if (response.success) {
+        console.log('[Hypatia] Campaign saved successfully');
+        // Show success state
+        if (saveBtn) {
+          saveBtn.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Saved!
+          `;
+          // Reset button after 2 seconds
+          setTimeout(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = `
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+              Save
+            `;
+          }, 2000);
+        }
+      } else {
+        console.error('[Hypatia] Failed to save campaign:', response.error);
+        // Reset button on error
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+              <polyline points="7 3 7 8 15 8"/>
+            </svg>
+            Save
+          `;
+        }
+      }
+    } catch (error) {
+      console.error('[Hypatia] Error saving campaign:', error);
+      // Reset button on error
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
+          Save
+        `;
+      }
+    }
+  } else {
+    console.log('[Hypatia] No fields to save or campaign not yet persisted');
+  }
+}
+
 async function handleContinueCampaign() {
-  // Save all edited campaign values
+  // Save all edited campaign values first
   const ctaInput = document.getElementById('hypatia-cta-input');
   const contactInput = document.getElementById('hypatia-contact-input');
 
@@ -2431,9 +3067,45 @@ async function handleContinueCampaign() {
     }
   }
 
-  // Navigate to leads step
-  currentStep = 'leads';
+  // Initialize parallel generation state
+  parallelGenerationState = {
+    isGenerating: true,
+    leadsLoading: true,
+    templateLoading: true,
+    cadenceLoading: true,
+    leadsResult: null,
+    templateResult: null,
+    cadenceResult: null,
+    leadsError: null,
+    templateError: null,
+    cadenceError: null
+  };
+
+  // Navigate to generating step
+  currentStep = 'generating';
   updatePanelContent();
+
+  // Get current user info
+  const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+  if (!status.userId) {
+    console.error('[Hypatia] No user ID found');
+    parallelGenerationState.leadsError = 'No user ID found';
+    parallelGenerationState.templateError = 'No user ID found';
+    parallelGenerationState.cadenceError = 'No user ID found';
+    parallelGenerationState.leadsLoading = false;
+    parallelGenerationState.templateLoading = false;
+    parallelGenerationState.cadenceLoading = false;
+    updatePanelContent();
+    return;
+  }
+
+  // Trigger all three API calls in parallel
+  const leadsPromise = triggerLeadsGeneration(status.userId);
+  const templatePromise = triggerTemplateGeneration(status.userId);
+  const cadencePromise = triggerCadenceGeneration(status.userId);
+
+  // Wait for all (they update state independently)
+  await Promise.allSettled([leadsPromise, templatePromise, cadencePromise]);
 }
 
 function handleGotoLeads() {
@@ -2451,22 +3123,482 @@ function handleGotoSent() {
   updatePanelContent();
 }
 
-function handleGenerateLeads() {
+// =============================================================================
+// LOAD SAVED AI-GENERATED CONTENT
+// =============================================================================
+
+async function loadSavedCampaignContent(campaignId) {
+  /**
+   * Load previously saved AI-generated content (leads, template, CTAs) for a campaign.
+   * Updates the UI if saved content is found.
+   */
+  try {
+    // Get current user info
+    const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+    if (!status.userId) {
+      console.log('[Hypatia] No user ID, skipping saved content load');
+      return;
+    }
+
+    console.log('[Hypatia] Loading saved content for campaign:', campaignId);
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'getSavedContent',
+      userId: status.userId,
+      campaignId: campaignId
+    });
+
+    if (!response.success) {
+      console.log('[Hypatia] No saved content found or error:', response.error);
+      return;
+    }
+
+    if (!response.hasSavedContent) {
+      console.log('[Hypatia] No saved content for this campaign');
+      return;
+    }
+
+    console.log('[Hypatia] Found saved content:', {
+      leads: response.leads?.length || 0,
+      hasTemplate: !!response.template,
+      ctas: response.ctas?.length || 0
+    });
+
+    // Update local state with saved content
+    let needsUpdate = false;
+
+    // Load saved leads
+    if (response.leads && response.leads.length > 0) {
+      currentLeads = response.leads.map(lead => ({
+        name: lead.full_name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+        first_name: lead.first_name,
+        last_name: lead.last_name,
+        email: lead.email,
+        title: lead.title,
+        company: lead.company,
+        location: lead.location,
+        linkedin_url: lead.linkedin_url,
+        status: lead.status || 'new',
+      }));
+      if (selectedCampaign) {
+        selectedCampaign.leads = currentLeads;
+      }
+      needsUpdate = true;
+      console.log('[Hypatia] Loaded', currentLeads.length, 'saved leads');
+    }
+
+    // Load saved template
+    if (response.template) {
+      currentTemplate = {
+        subject: response.template.subject || '',
+        body: response.template.body || '',
+        placeholders: response.template.placeholders || [],
+      };
+      if (selectedCampaign) {
+        selectedCampaign.template = currentTemplate;
+      }
+      needsUpdate = true;
+      console.log('[Hypatia] Loaded saved template');
+    }
+
+    // Load saved CTAs (update the campaign's CTA description with the first one)
+    if (response.ctas && response.ctas.length > 0 && selectedCampaign) {
+      // Store all CTAs for later use
+      selectedCampaign.saved_ctas = response.ctas;
+      // If no CTA description is set, use the first saved one
+      if (!selectedCampaign.cta_description && response.ctas[0]) {
+        selectedCampaign.cta_description = response.ctas[0].description;
+      }
+      needsUpdate = true;
+      console.log('[Hypatia] Loaded', response.ctas.length, 'saved CTAs');
+    }
+
+    // Refresh UI if we loaded any content and still viewing this campaign
+    if (needsUpdate && currentStep === 'campaign_detail' && selectedCampaign?.id === campaignId) {
+      updatePanelContent();
+    }
+
+  } catch (error) {
+    console.error('[Hypatia] Error loading saved content:', error);
+  }
+}
+
+
+// =============================================================================
+// PARALLEL GENERATION HELPERS
+// =============================================================================
+
+async function triggerLeadsGeneration(userId) {
+  try {
+    const query = selectedCampaign?.contact_description || '';
+    if (!query.trim()) {
+      parallelGenerationState.leadsError = 'No contact description provided. Please go back and fill in "Who to contact".';
+      parallelGenerationState.leadsLoading = false;
+      updatePanelContent();
+      return;
+    }
+
+    console.log('[Hypatia] Starting parallel leads generation with query:', query);
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'generateLeads',
+      userId: userId,
+      campaignId: selectedCampaign?.id,
+      query: query,
+      limit: 25
+    });
+
+    if (response.success && response.leads) {
+      currentLeads = response.leads;
+      if (selectedCampaign) {
+        selectedCampaign.leads = currentLeads;
+      }
+      parallelGenerationState.leadsResult = response;
+      console.log(`[Hypatia] Parallel leads generation complete: ${currentLeads.length} leads`);
+    } else {
+      parallelGenerationState.leadsError = response.error || 'Unknown error generating leads';
+      console.error('[Hypatia] Parallel leads generation failed:', response.error);
+    }
+  } catch (error) {
+    parallelGenerationState.leadsError = error.message;
+    console.error('[Hypatia] Parallel leads generation error:', error);
+  } finally {
+    parallelGenerationState.leadsLoading = false;
+    updatePanelContent();
+  }
+}
+
+async function triggerTemplateGeneration(userId) {
+  try {
+    console.log('[Hypatia] Starting parallel template generation');
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'generateTemplate',
+      userId: userId,
+      campaignId: selectedCampaign?.id,
+      cta: selectedCampaign?.cta_description || '',
+      stylePrompt: selectedCampaign?.style_prompt || selectedCampaign?.style_description || '',
+      sampleEmails: selectedCampaign?.emails || [],
+      currentSubject: null,
+      currentBody: null
+    });
+
+    if (response.success && response.template) {
+      currentTemplate.subject = response.template.subject || '';
+      currentTemplate.body = response.template.body || '';
+      parallelGenerationState.templateResult = response;
+      console.log('[Hypatia] Parallel template generation complete');
+    } else {
+      parallelGenerationState.templateError = response.error || 'Unknown error generating template';
+      console.error('[Hypatia] Parallel template generation failed:', response.error);
+    }
+  } catch (error) {
+    parallelGenerationState.templateError = error.message;
+    console.error('[Hypatia] Parallel template generation error:', error);
+  } finally {
+    parallelGenerationState.templateLoading = false;
+    updatePanelContent();
+  }
+}
+
+async function handleRetryLeads() {
+  parallelGenerationState.leadsLoading = true;
+  parallelGenerationState.leadsError = null;
+  parallelGenerationState.leadsResult = null;
+  updatePanelContent();
+
+  const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+  if (status.userId) {
+    await triggerLeadsGeneration(status.userId);
+  }
+}
+
+async function handleRetryTemplate() {
+  parallelGenerationState.templateLoading = true;
+  parallelGenerationState.templateError = null;
+  parallelGenerationState.templateResult = null;
+  updatePanelContent();
+
+  const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+  if (status.userId) {
+    await triggerTemplateGeneration(status.userId);
+  }
+}
+
+async function triggerCadenceGeneration(userId) {
+  try {
+    console.log('[Hypatia] Starting parallel cadence generation');
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'generateCadence',
+      userId: userId,
+      campaignId: selectedCampaign?.id,
+      stylePrompt: selectedCampaign?.style_description || selectedCampaign?.style_prompt || '',
+      sampleEmails: selectedCampaign?.emails || [],
+      timing: currentCadenceTiming
+    });
+
+    if (response.success && response.cadence) {
+      parallelGenerationState.cadenceResult = response;
+      console.log(`[Hypatia] Parallel cadence generation complete: ${response.cadence.length} emails`);
+    } else {
+      parallelGenerationState.cadenceError = response.error || 'Unknown error generating cadence';
+      console.error('[Hypatia] Parallel cadence generation failed:', response.error);
+    }
+  } catch (error) {
+    parallelGenerationState.cadenceError = error.message;
+    console.error('[Hypatia] Parallel cadence generation error:', error);
+  } finally {
+    parallelGenerationState.cadenceLoading = false;
+    updatePanelContent();
+  }
+}
+
+async function handleRetryCadence() {
+  parallelGenerationState.cadenceLoading = true;
+  parallelGenerationState.cadenceError = null;
+  parallelGenerationState.cadenceResult = null;
+  updatePanelContent();
+
+  const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+  if (status.userId) {
+    await triggerCadenceGeneration(status.userId);
+  }
+}
+
+async function handleCadenceTimingChange(index, newDay) {
+  // Update timing and re-render
+  const keys = ['day_1', 'day_2', 'day_3', 'day_4'];
+  currentCadenceTiming[keys[index]] = newDay;
+
+  // Update in local result for immediate UI feedback
+  if (parallelGenerationState.cadenceResult?.cadence) {
+    parallelGenerationState.cadenceResult.cadence[index].day_number = newDay;
+    updatePanelContent();
+  }
+
+  // Save to backend
+  const cadenceId = parallelGenerationState.cadenceResult?.cadence[index]?.id;
+  if (cadenceId) {
+    await chrome.runtime.sendMessage({
+      action: 'updateCadenceEmail',
+      cadenceId: cadenceId,
+      updates: { day_number: newDay }
+    });
+  }
+}
+
+async function handleCadenceEmailRegenerate(index) {
+  const cadenceId = parallelGenerationState.cadenceResult?.cadence[index]?.id;
+  if (!cadenceId) return;
+
+  // Show loading state for this specific email
+  const item = document.querySelector(`[data-cadence-index="${index}"]`);
+  if (item) item.classList.add('regenerating');
+
+  const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+  const response = await chrome.runtime.sendMessage({
+    action: 'regenerateCadenceEmail',
+    cadenceId: cadenceId,
+    userId: status.userId
+  });
+
+  if (response.success && response.email) {
+    // Update local state
+    parallelGenerationState.cadenceResult.cadence[index] = response.email;
+    updatePanelContent();
+  }
+}
+
+function handleCadenceEmailEdit(index) {
+  const email = parallelGenerationState.cadenceResult?.cadence[index];
+  if (!email) return;
+
+  const item = document.querySelector(`[data-cadence-index="${index}"]`);
+  if (!item) return;
+
+  // Check if already in edit mode
+  if (item.classList.contains('editing')) return;
+
+  item.classList.add('editing');
+
+  const contentDiv = item.querySelector('.hypatia-cadence-content');
+  if (!contentDiv) return;
+
+  // Store original content for cancel
+  const originalSubject = email.subject || '';
+  const originalBody = email.body || '';
+
+  // Replace content with editable fields
+  contentDiv.innerHTML = `
+    <div class="hypatia-cadence-type">${email.email_type === 'initial' ? 'Initial Outreach' : `Follow-up #${index}`}</div>
+    <input type="text" class="hypatia-cadence-subject-input" value="${escapeHtml(originalSubject)}" placeholder="Email subject...">
+    <textarea class="hypatia-cadence-body-input" placeholder="Email body...">${escapeHtml(originalBody)}</textarea>
+    <div class="hypatia-cadence-edit-actions">
+      <button class="hypatia-cadence-save-btn">Save</button>
+      <button class="hypatia-cadence-cancel-btn">Cancel</button>
+    </div>
+  `;
+
+  // Focus the subject input
+  const subjectInput = contentDiv.querySelector('.hypatia-cadence-subject-input');
+  if (subjectInput) subjectInput.focus();
+
+  // Handle save
+  const saveBtn = contentDiv.querySelector('.hypatia-cadence-save-btn');
+  saveBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const newSubject = contentDiv.querySelector('.hypatia-cadence-subject-input').value;
+    const newBody = contentDiv.querySelector('.hypatia-cadence-body-input').value;
+
+    // Update local state
+    parallelGenerationState.cadenceResult.cadence[index].subject = newSubject;
+    parallelGenerationState.cadenceResult.cadence[index].body = newBody;
+
+    // Save to backend if we have an ID
+    const cadenceId = email.id;
+    if (cadenceId) {
+      try {
+        const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+        await chrome.runtime.sendMessage({
+          action: 'updateCadenceEmail',
+          cadenceId: cadenceId,
+          userId: status.userId,
+          subject: newSubject,
+          body: newBody
+        });
+      } catch (err) {
+        console.error('[Hypatia] Failed to save cadence email:', err);
+      }
+    }
+
+    item.classList.remove('editing');
+    updatePanelContent();
+  });
+
+  // Handle cancel
+  const cancelBtn = contentDiv.querySelector('.hypatia-cadence-cancel-btn');
+  cancelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    item.classList.remove('editing');
+    updatePanelContent();
+  });
+}
+
+function showTimingPicker(index, targetElement) {
+  // Remove any existing picker
+  const existingPicker = document.querySelector('.hypatia-timing-picker');
+  if (existingPicker) {
+    existingPicker.remove();
+  }
+
+  const currentDay = parallelGenerationState.cadenceResult?.cadence[index]?.day_number || 1;
+
+  // Day options based on email type
+  const dayOptions = index === 0
+    ? [1, 2, 3]  // Initial outreach: Day 1-3
+    : [2, 3, 5, 7, 10, 14, 21, 30];  // Follow-ups: various intervals
+
+  const picker = document.createElement('div');
+  picker.className = 'hypatia-timing-picker';
+  picker.innerHTML = dayOptions.map(day => `
+    <button class="hypatia-timing-option ${day === currentDay ? 'selected' : ''}" data-day="${day}">
+      Day ${day}
+    </button>
+  `).join('');
+
+  // Position the picker near the button
+  const rect = targetElement.getBoundingClientRect();
+  picker.style.position = 'fixed';
+  picker.style.top = `${rect.bottom + 5}px`;
+  picker.style.left = `${rect.left}px`;
+
+  document.body.appendChild(picker);
+
+  // Handle option clicks
+  picker.querySelectorAll('.hypatia-timing-option').forEach(option => {
+    option.addEventListener('click', () => {
+      const newDay = parseInt(option.dataset.day, 10);
+      handleCadenceTimingChange(index, newDay);
+      picker.remove();
+    });
+  });
+
+  // Close picker when clicking outside
+  setTimeout(() => {
+    document.addEventListener('click', function closePicker(e) {
+      if (!picker.contains(e.target) && e.target !== targetElement) {
+        picker.remove();
+        document.removeEventListener('click', closePicker);
+      }
+    });
+  }, 0);
+}
+
+async function handleGenerateLeads() {
   const query = document.getElementById('hypatia-leads-query')?.value?.trim();
   if (!query) {
     return;
   }
 
-  // For now, simulate generating leads with dummy data
-  currentLeads = getDummyLeads();
+  const limitSelect = document.getElementById('hypatia-leads-limit');
+  const limit = parseInt(limitSelect?.value || '25', 10);
 
-  // Update the campaign's leads
-  if (selectedCampaign) {
-    selectedCampaign.leads = currentLeads;
+  // Get current user info
+  const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+  if (!status.userId) {
+    console.error('[Hypatia] No user ID found');
+    return;
   }
 
-  // Re-render to show the leads
-  updatePanelContent();
+  // Show loading state
+  const generateBtn = document.getElementById('hypatia-generate-leads');
+  const originalBtnContent = generateBtn?.innerHTML;
+  if (generateBtn) {
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = `
+      <div class="hypatia-spinner-small"></div>
+      Finding leads...
+    `;
+  }
+
+  try {
+    // Call the backend API via background.js
+    const response = await chrome.runtime.sendMessage({
+      action: 'generateLeads',
+      userId: status.userId,
+      campaignId: selectedCampaign?.id,
+      query: query,
+      limit: limit
+    });
+
+    if (response.success && response.leads) {
+      currentLeads = response.leads;
+
+      // Update the campaign's leads
+      if (selectedCampaign) {
+        selectedCampaign.leads = currentLeads;
+      }
+
+      console.log(`[Hypatia] Generated ${currentLeads.length} leads`);
+    } else {
+      console.error('[Hypatia] Lead generation failed:', response.error);
+      // Show error to user
+      alert(`Lead generation failed: ${response.error || 'Unknown error'}`);
+    }
+  } catch (error) {
+    console.error('[Hypatia] Lead generation error:', error);
+    alert(`Lead generation failed: ${error.message}`);
+  } finally {
+    // Restore button state
+    if (generateBtn) {
+      generateBtn.disabled = false;
+      generateBtn.innerHTML = originalBtnContent;
+    }
+
+    // Re-render to show the leads (or error state)
+    updatePanelContent();
+  }
 }
 
 function handleSaveAndSend() {
@@ -2481,21 +3613,399 @@ function handleSaveAndSend() {
     selectedCampaign.template = { ...currentTemplate };
   }
 
-  // Go to sent screen (simulating that emails were sent)
-  if (selectedCampaign && currentLeads.length > 0) {
-    // Simulate sent emails
-    selectedCampaign.sent_emails = currentLeads.map(lead => ({
-      recipient_name: lead.name,
-      recipient_email: lead.email,
-      subject: replaceTemplateVariables(currentTemplate.subject, lead),
-      status: 'delivered',
+  // Validate we have leads and template
+  if (!currentLeads || currentLeads.length === 0) {
+    alert('No leads selected. Please generate or add leads first.');
+    return;
+  }
+
+  if (!currentTemplate.subject || !currentTemplate.body) {
+    alert('Please fill in both subject and body.');
+    return;
+  }
+
+  // Show review modal instead of directly sending
+  showReviewModal();
+}
+
+// =============================================================================
+// EMAIL REVIEW & SEND MODAL
+// =============================================================================
+
+function showReviewModal() {
+  // Prepare emails with personalized content
+  const emails = currentLeads.map(lead => ({
+    lead: lead,
+    subject: replaceTemplateVariables(currentTemplate.subject, lead),
+    body: replaceTemplateVariables(currentTemplate.body, lead)
+  }));
+
+  // Get the first lead for preview
+  const previewEmail = emails[0];
+  const lead = previewEmail.lead;
+  const initials = (lead.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+  // Create modal HTML
+  const modalHtml = `
+    <div class="hypatia-review-modal-overlay" id="hypatia-review-modal">
+      <div class="hypatia-review-modal">
+        <div class="hypatia-review-modal-header">
+          <h3>Review Email Before Sending</h3>
+          <button class="hypatia-modal-close" id="hypatia-close-review-modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="hypatia-review-modal-body">
+          <!-- Recipient info card -->
+          <div class="hypatia-recipient-card">
+            <div class="hypatia-recipient-avatar">
+              <span>${initials}</span>
+            </div>
+            <div class="hypatia-recipient-info">
+              <div class="hypatia-recipient-name">${lead.name || 'Unknown'}</div>
+              <div class="hypatia-recipient-email">${lead.email || ''}</div>
+              <div class="hypatia-recipient-company">${lead.title || ''} ${lead.company ? '@ ' + lead.company : ''}</div>
+            </div>
+          </div>
+
+          <!-- Email preview -->
+          <div class="hypatia-email-preview-box">
+            <div class="hypatia-preview-subject-row">
+              <label>Subject:</label>
+              <div>${escapeHtml(previewEmail.subject)}</div>
+            </div>
+            <div class="hypatia-preview-body-row">
+              <label>Message:</label>
+              <div>${escapeHtml(previewEmail.body).replace(/\n/g, '<br>')}</div>
+            </div>
+          </div>
+
+          <!-- Info about other emails -->
+          <div class="hypatia-review-info">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span>${emails.length - 1} more similar emails will be sent with personalized names and details</span>
+          </div>
+        </div>
+
+        <div class="hypatia-review-modal-footer">
+          <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-review-cancel">
+            Cancel
+          </button>
+          <button class="hypatia-btn hypatia-btn-primary" id="hypatia-send-all">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22,2 15,22 11,13 2,9"></polygon>
+            </svg>
+            Send All ${emails.length} Emails
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Insert modal into DOM
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  // Set up event listeners
+  document.getElementById('hypatia-close-review-modal')?.addEventListener('click', closeReviewModal);
+  document.getElementById('hypatia-review-cancel')?.addEventListener('click', closeReviewModal);
+  document.getElementById('hypatia-send-all')?.addEventListener('click', () => sendAllEmailsWithProgress(emails));
+
+  // Close on overlay click
+  document.getElementById('hypatia-review-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'hypatia-review-modal') {
+      closeReviewModal();
+    }
+  });
+}
+
+function closeReviewModal() {
+  const modal = document.getElementById('hypatia-review-modal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+function showSendingProgressModal(totalEmails) {
+  // Remove review modal if present
+  closeReviewModal();
+
+  const modalHtml = `
+    <div class="hypatia-review-modal-overlay" id="hypatia-sending-modal">
+      <div class="hypatia-sending-modal">
+        <div class="hypatia-sending-icon">
+          <div class="hypatia-spinner"></div>
+        </div>
+        <h3>Sending Emails...</h3>
+        <div class="hypatia-sending-progress">
+          <div class="hypatia-progress-bar">
+            <div class="hypatia-progress-fill" id="hypatia-send-progress-bar" style="width: 0%"></div>
+          </div>
+          <div class="hypatia-progress-text">
+            <span id="hypatia-sent-count">0</span> of ${totalEmails} sent
+          </div>
+        </div>
+        <div class="hypatia-sending-status" id="hypatia-sending-status">
+          Preparing to send...
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function updateSendingProgress(current, total, currentEmail) {
+  const progressBar = document.getElementById('hypatia-send-progress-bar');
+  const sentCount = document.getElementById('hypatia-sent-count');
+  const status = document.getElementById('hypatia-sending-status');
+
+  if (progressBar) {
+    progressBar.style.width = `${(current / total) * 100}%`;
+  }
+  if (sentCount) {
+    sentCount.textContent = current;
+  }
+  if (status && currentEmail) {
+    status.textContent = `Sending to: ${currentEmail}`;
+  }
+}
+
+function closeSendingModal() {
+  const modal = document.getElementById('hypatia-sending-modal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+function showSendingResultsModal(results) {
+  closeSendingModal();
+
+  const successCount = results.filter(r => r.success).length;
+  const failedCount = results.filter(r => !r.success).length;
+  const allSuccess = failedCount === 0;
+
+  const failedList = results.filter(r => !r.success);
+
+  const modalHtml = `
+    <div class="hypatia-review-modal-overlay" id="hypatia-results-modal">
+      <div class="hypatia-results-modal">
+        <div class="hypatia-results-icon ${allSuccess ? 'success' : 'partial'}">
+          ${allSuccess
+            ? '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#137333" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22,4 12,14.01 9,11.01"></polyline></svg>'
+            : '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ea8600" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>'
+          }
+        </div>
+        <h3>${allSuccess ? 'All Emails Sent!' : 'Sending Complete'}</h3>
+
+        <div class="hypatia-results-stats">
+          <div class="hypatia-result-stat success">
+            <span class="hypatia-stat-number">${successCount}</span>
+            <span class="hypatia-stat-label">Sent Successfully</span>
+          </div>
+          ${failedCount > 0 ? `
+            <div class="hypatia-result-stat failed">
+              <span class="hypatia-stat-number">${failedCount}</span>
+              <span class="hypatia-stat-label">Failed</span>
+            </div>
+          ` : ''}
+        </div>
+
+        ${failedCount > 0 ? `
+          <div class="hypatia-failed-list">
+            <h4>Failed Emails:</h4>
+            <ul>
+              ${failedList.map(r => `<li>${escapeHtml(r.recipient_email)}: ${escapeHtml(r.error || 'Unknown error')}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        <button class="hypatia-btn hypatia-btn-primary" id="hypatia-results-done">
+          View Sent Emails
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  document.getElementById('hypatia-results-done')?.addEventListener('click', () => {
+    closeResultsModal();
+    // Navigate to sent screen
+    currentStep = 'sent';
+    updatePanelContent();
+  });
+}
+
+function closeResultsModal() {
+  const modal = document.getElementById('hypatia-results-modal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+async function sendAllEmailsWithProgress(emails) {
+  showSendingProgressModal(emails.length);
+
+  // Get user info
+  const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+  if (!status.userId) {
+    closeSendingModal();
+    alert('Error: Not logged in. Please refresh and try again.');
+    return;
+  }
+
+  const results = [];
+
+  // Send emails one by one for real-time progress
+  for (let i = 0; i < emails.length; i++) {
+    const email = emails[i];
+    updateSendingProgress(i, emails.length, email.lead.email);
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'sendSingleEmail',
+        userId: status.userId,
+        campaignId: selectedCampaign?.id,
+        email: {
+          recipient_email: email.lead.email,
+          recipient_name: email.lead.name,
+          subject: email.subject,
+          body: email.body
+        }
+      });
+
+      results.push({
+        recipient_email: email.lead.email,
+        recipient_name: email.lead.name,
+        success: response.success,
+        gmail_id: response.gmail_id,
+        thread_id: response.thread_id,
+        error: response.error
+      });
+
+      // Check for auth error - stop immediately
+      if (response.authError) {
+        closeSendingModal();
+        alert('Gmail authentication expired. Please sign out and sign back in.');
+        return;
+      }
+    } catch (error) {
+      results.push({
+        recipient_email: email.lead.email,
+        recipient_name: email.lead.name,
+        success: false,
+        error: error.message
+      });
+    }
+
+    // Update progress after each send
+    updateSendingProgress(i + 1, emails.length, null);
+  }
+
+  // Update local state with sent emails
+  if (selectedCampaign) {
+    selectedCampaign.sent_emails = results.map(r => ({
+      recipient_name: r.recipient_name,
+      recipient_email: r.recipient_email,
+      subject: emails.find(e => e.lead.email === r.recipient_email)?.subject || '',
+      body: emails.find(e => e.lead.email === r.recipient_email)?.body || '',
+      status: r.success ? 'sent' : 'failed',
       sent_at: new Date().toISOString(),
-      body: replaceTemplateVariables(currentTemplate.body, lead)
+      gmail_id: r.gmail_id,
+      thread_id: r.thread_id,
+      error: r.error
     }));
   }
 
-  currentStep = 'sent';
-  updatePanelContent();
+  // Show results
+  showSendingResultsModal(results);
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function handleRegenerateTemplate() {
+  // Get current template values
+  const subjectInput = document.getElementById('hypatia-template-subject');
+  const bodyInput = document.getElementById('hypatia-template-body');
+  const currentSubject = subjectInput?.value || '';
+  const currentBody = bodyInput?.value || '';
+
+  // Get current user info
+  const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+  if (!status.userId) {
+    console.error('[Hypatia] No user ID found');
+    return;
+  }
+
+  // Show loading state
+  const regenerateBtn = document.getElementById('hypatia-regenerate-template');
+  const originalBtnContent = regenerateBtn?.innerHTML;
+  if (regenerateBtn) {
+    regenerateBtn.disabled = true;
+    regenerateBtn.innerHTML = `
+      <div class="hypatia-spinner-small"></div>
+      Generating...
+    `;
+  }
+
+  try {
+    // Call the backend API via background.js
+    const response = await chrome.runtime.sendMessage({
+      action: 'generateTemplate',
+      userId: status.userId,
+      campaignId: selectedCampaign?.id,
+      cta: selectedCampaign?.cta_description || '',
+      stylePrompt: selectedCampaign?.style_prompt || selectedCampaign?.style_description || '',
+      sampleEmails: selectedCampaign?.emails || [],
+      currentSubject: currentSubject,
+      currentBody: currentBody
+    });
+
+    if (response.success && response.template) {
+      // Update the template inputs
+      if (subjectInput) {
+        subjectInput.value = response.template.subject || '';
+      }
+      if (bodyInput) {
+        bodyInput.value = response.template.body || '';
+      }
+
+      // Update currentTemplate state
+      currentTemplate.subject = response.template.subject || '';
+      currentTemplate.body = response.template.body || '';
+
+      // Update the preview
+      updateTemplatePreview();
+
+      console.log('[Hypatia] Template regenerated successfully');
+    } else {
+      console.error('[Hypatia] Template generation failed:', response.error);
+      alert(`Template generation failed: ${response.error || 'Unknown error'}`);
+    }
+  } catch (error) {
+    console.error('[Hypatia] Template generation error:', error);
+    alert(`Template generation failed: ${error.message}`);
+  } finally {
+    // Restore button state
+    if (regenerateBtn) {
+      regenerateBtn.disabled = false;
+      regenerateBtn.innerHTML = originalBtnContent;
+    }
+  }
 }
 
 function insertVariableAtCursor(variable) {
@@ -2522,8 +4032,9 @@ function updateTemplatePreview() {
   currentTemplate.subject = subjectInput?.value || '';
   currentTemplate.body = bodyInput?.value || '';
 
-  const leads = currentLeads.length > 0 ? currentLeads : getDummyLeads();
-  const previewLead = leads[0] || { name: 'John Doe', email: 'john@example.com', company: 'Acme Inc', title: 'CEO' };
+  // Use first lead for preview, or a sample lead if no leads yet
+  const sampleLead = { name: 'John Doe', first_name: 'John', last_name: 'Doe', email: 'john@example.com', company: 'Acme Inc', title: 'CEO' };
+  const previewLead = currentLeads[0] || sampleLead;
 
   if (previewSubject) {
     previewSubject.textContent = replaceTemplateVariables(currentTemplate.subject, previewLead);
@@ -2534,160 +4045,10 @@ function updateTemplatePreview() {
   }
 }
 
-// =============================================================================
-// QUESTIONNAIRE HANDLERS
-// =============================================================================
 
-function handleQuestionnaireNext() {
-  const question = QUESTIONNAIRE_QUESTIONS[questionnaireState.currentQuestion];
-
-  // Collect current answer
-  if (!collectCurrentAnswer(question)) {
-    // Validation failed for required field
-    return;
-  }
-
-  // Check if last question
-  if (questionnaireState.currentQuestion === QUESTIONNAIRE_QUESTIONS.length - 1) {
-    handleQuestionnaireComplete();
-  } else {
-    questionnaireState.currentQuestion++;
-    updatePanelContent();
-  }
-}
-
-function handleQuestionnairePrev() {
-  // Save current answer before going back
-  const question = QUESTIONNAIRE_QUESTIONS[questionnaireState.currentQuestion];
-  collectCurrentAnswer(question);
-
-  if (questionnaireState.currentQuestion > 0) {
-    questionnaireState.currentQuestion--;
-    updatePanelContent();
-  }
-}
-
-function handleQuestionnaireSkip() {
-  questionnaireState.currentQuestion++;
-  updatePanelContent();
-}
-
-function collectCurrentAnswer(question) {
-  switch (question.type) {
-    case 'name_confirm':
-      const nameInput = document.getElementById('hypatia-name-input');
-      const nameConfirmed = document.getElementById('hypatia-name-confirmed');
-      questionnaireState.answers.displayName = nameInput?.value?.trim() || '';
-      questionnaireState.answers.nameConfirmed = nameConfirmed?.checked || false;
-
-      if (question.required && !questionnaireState.answers.displayName) {
-        showValidationError('Please enter your name');
-        return false;
-      }
-      return true;
-
-    case 'text':
-      const textInput = document.getElementById('hypatia-text-input');
-      const textValue = textInput?.value?.trim() || '';
-
-      const textMapping = {
-        'purpose': 'appPurpose',
-        'ctas': 'generalCtas',
-        'contacts': 'contactTypes'
-      };
-      questionnaireState.answers[textMapping[question.id]] = textValue;
-
-      if (question.required && !textValue) {
-        showValidationError('This field is required');
-        return false;
-      }
-      return true;
-
-    case 'select':
-      const selected = document.querySelector('input[name="hypatia-select"]:checked');
-      const selectValue = selected?.value || '';
-
-      const selectMapping = {
-        'userType': 'userType',
-        'referral': 'referralSource'
-      };
-      questionnaireState.answers[selectMapping[question.id]] = selectValue;
-
-      if (question.required && !selectValue) {
-        showValidationError('Please select an option');
-        return false;
-      }
-      return true;
-
-    default:
-      return true;
-  }
-}
-
-function showValidationError(message) {
-  // Remove existing error
-  const existingError = document.querySelector('.hypatia-validation-error');
-  if (existingError) {
-    existingError.remove();
-  }
-
-  // Create validation error element
-  const errorEl = document.createElement('div');
-  errorEl.className = 'hypatia-validation-error';
-  errorEl.textContent = message;
-
-  const questionContent = document.querySelector('.hypatia-question-content');
-  if (questionContent) {
-    questionContent.appendChild(errorEl);
-  }
-
-  // Auto-hide after 3 seconds
-  setTimeout(() => {
-    errorEl?.remove();
-  }, 3000);
-}
-
-function handleQuestionnaireComplete() {
-  questionnaireState.isComplete = true;
-
-  // Submit answers to background script
-  chrome.runtime.sendMessage({
-    action: 'submitQuestionnaire',
-    userId: currentUserId,
-    answers: questionnaireState.answers
-  }, (response) => {
-    if (!response?.success) {
-      console.error('Failed to save questionnaire:', response?.error);
-    }
-  });
-
-  // Check if both processes are complete
-  checkBothProcessesComplete();
-}
-
-function checkBothProcessesComplete() {
-  if (questionnaireState.isComplete && backendState.isComplete) {
-    // Both done - show complete screen
-    currentStep = 'complete';
-    progressData.emailCount = backendState.emailCount;
-    progressData.campaignsCreated = backendState.campaignsCreated;
-    campaignsData = backendState.campaigns;
-
-    // Mark onboarding complete
-    chrome.runtime.sendMessage({
-      action: 'markOnboardingDone',
-      userId: currentUserId
-    });
-
-    updatePanelContent();
-    updateButtonState(true);
-  } else if (questionnaireState.isComplete && !backendState.isComplete) {
-    // Questionnaire done, waiting for backend
-    currentStep = 'waiting';
-    updatePanelContent();
-  }
-  // If backend is complete but questionnaire isn't, user continues questionnaire
-}
+// Note: Questionnaire handlers (handleQuestionnaireNext, handleQuestionnairePrev,
+// handleQuestionnaireSkip, collectCurrentAnswer, showValidationError,
+// handleQuestionnaireComplete, checkBothProcessesComplete) are now in onboarding.js
 
 // =============================================================================
 // MESSAGE LISTENER (from background script)
@@ -2695,114 +4056,10 @@ function checkBothProcessesComplete() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'onboardingProgress') {
-    handleProgressUpdate(message);
+    // Delegate to onboarding.js handler
+    handleOnboardingProgressUpdate(message);
   }
 });
-
-function handleProgressUpdate(data) {
-  switch (data.step) {
-    case 'auth':
-      progressData.message = data.message;
-      if (data.displayName) {
-        userDisplayName = data.displayName;
-      }
-      // Update signing in status (new flow) or progress status (legacy)
-      const signinStatus = document.getElementById('hypatia-signin-status');
-      if (signinStatus) signinStatus.textContent = data.message;
-      const statusAuth = document.getElementById('hypatia-status-message');
-      if (statusAuth) statusAuth.textContent = data.message;
-      break;
-
-    case 'setup':
-      progressData.message = data.message;
-      // Update signing in status (new flow) or progress status (legacy)
-      const signinStatusSetup = document.getElementById('hypatia-signin-status');
-      if (signinStatusSetup) signinStatusSetup.textContent = data.message;
-      const statusSetup = document.getElementById('hypatia-status-message');
-      if (statusSetup) statusSetup.textContent = data.message;
-      break;
-
-    case 'questionnaire_start':
-      // Backend is starting - switch to questionnaire immediately
-      currentUserId = data.userId;
-      userDisplayName = data.displayName || '';
-      questionnaireState.answers.displayName = userDisplayName;
-      questionnaireState.currentQuestion = 0;
-      questionnaireState.isComplete = false;
-      backendState.isComplete = false;
-      currentStep = 'questionnaire';
-      updatePanelContent();
-      break;
-
-    case 'backend_progress':
-      // Update backend status indicator without changing step
-      // Could update a mini progress indicator if desired
-      const backendStatus = document.getElementById('hypatia-backend-status');
-      if (backendStatus) {
-        backendStatus.innerHTML = getBackendStatusIndicator();
-      }
-      break;
-
-    case 'backend_complete':
-      // Backend processing finished
-      backendState.isComplete = true;
-      backendState.emailCount = data.emailCount;
-      backendState.campaignsCreated = data.campaignsCreated;
-      backendState.campaigns = data.campaigns || [];
-
-      // Update status indicator
-      const statusEl = document.getElementById('hypatia-backend-status');
-      if (statusEl) {
-        statusEl.innerHTML = getBackendStatusIndicator();
-      }
-
-      // Check if both processes are complete
-      checkBothProcessesComplete();
-      break;
-
-    case 'fetching':
-      progressData.message = data.message || 'Fetching your sent emails...';
-      if (data.current !== undefined) {
-        updateProgress(data.current, data.total);
-      }
-      const statusFetch = document.getElementById('hypatia-status-message');
-      if (statusFetch && data.message) statusFetch.textContent = data.message;
-      break;
-
-    case 'saving':
-      progressData.message = data.message;
-      const statusSave = document.getElementById('hypatia-status-message');
-      if (statusSave) statusSave.textContent = data.message;
-      break;
-
-    case 'clustering':
-      progressData.step = 'clustering';
-      progressData.message = data.message;
-      // Re-render to show clustering UI (hides progress bar, changes title)
-      updatePanelContent();
-      break;
-
-    case 'complete':
-      // Stop the clustering animation before transitioning
-      stopClusteringAnimation();
-      currentStep = 'complete';
-      progressData.emailCount = data.emailCount;
-      progressData.campaignsCreated = data.campaignsCreated || 0;
-      // Store campaigns data for viewing
-      if (data.campaigns && data.campaigns.length > 0) {
-        campaignsData = data.campaigns;
-      }
-      updatePanelContent();
-      updateButtonState(true);
-      break;
-
-    case 'error':
-      currentStep = 'error';
-      progressData.message = data.message;
-      updatePanelContent();
-      break;
-  }
-}
 
 // =============================================================================
 // GMAIL LEFT SIDEBAR INJECTION
@@ -2920,6 +4177,29 @@ function getSidebarHTML(isSignedIn, userEmail) {
         </span>
         <span class="hypatia-item-label">Campaigns</span>
       </div>
+      <div class="hypatia-sidebar-item" data-tab="leads">
+        <span class="hypatia-item-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </span>
+        <span class="hypatia-item-label">Leads</span>
+      </div>
+      <div class="hypatia-sidebar-item" data-tab="templates">
+        <span class="hypatia-item-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+        </span>
+        <span class="hypatia-item-label">Templates</span>
+      </div>
       <div class="hypatia-sidebar-item" data-tab="dashboard">
         <span class="hypatia-item-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2983,6 +4263,8 @@ function toggleSidebarCollapse() {
 function handleSidebarNavigation(tab) {
   const hashMap = {
     'campaigns': '#hypatia',
+    'leads': '#hypatia/leads',
+    'templates': '#hypatia/templates',
     'dashboard': '#hypatia/dashboard'
   };
 
@@ -3003,6 +4285,8 @@ function updateSidebarActiveState() {
 
     if (
       (tab === 'campaigns' && (hash === 'hypatia' || hash.startsWith('hypatia/campaign/'))) ||
+      (tab === 'leads' && hash === 'hypatia/leads') ||
+      (tab === 'templates' && hash === 'hypatia/templates') ||
       (tab === 'dashboard' && hash === 'hypatia/dashboard')
     ) {
       item.classList.add('active');
