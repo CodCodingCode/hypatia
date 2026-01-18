@@ -276,12 +276,12 @@ function replaceVariables(text, lead) {
   }
 
   return text
-    .replace(/\{\{first_name\}\}/gi, firstName)
-    .replace(/\{\{last_name\}\}/gi, lastName)
-    .replace(/\{\{name\}\}/gi, lead.name || '')
-    .replace(/\{\{company\}\}/gi, lead.company || '')
-    .replace(/\{\{title\}\}/gi, lead.title || '')
-    .replace(/\{\{email\}\}/gi, lead.email || '');
+    .replace(/\{\{?first_name\}\}?/gi, firstName)
+    .replace(/\{\{?last_name\}\}?/gi, lastName)
+    .replace(/\{\{?name\}\}?/gi, lead.name || '')
+    .replace(/\{\{?company\}\}?/gi, lead.company || '')
+    .replace(/\{\{?title\}\}?/gi, lead.title || '')
+    .replace(/\{\{?email\}\}?/gi, lead.email || '');
 }
 
 // =============================================================================

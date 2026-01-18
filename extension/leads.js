@@ -48,7 +48,11 @@ function getLeadsScreen(campaign) {
           <div class="hypatia-manual-entry-section">
             <div class="hypatia-section-label">Add Lead Manually</div>
             <div class="hypatia-manual-input-row">
-              <input type="email" id="hypatia-manual-email" class="hypatia-manual-email-input" placeholder="Enter email address" />
+              <input type="text" id="hypatia-manual-first-name" class="hypatia-manual-name-input" placeholder="First name" required />
+              <input type="text" id="hypatia-manual-last-name" class="hypatia-manual-name-input" placeholder="Last name" required />
+            </div>
+            <div class="hypatia-manual-input-row">
+              <input type="email" id="hypatia-manual-email" class="hypatia-manual-email-input" placeholder="Enter email address" required />
               <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-add-manual-lead">Add</button>
             </div>
           </div>
@@ -60,12 +64,6 @@ function getLeadsScreen(campaign) {
               </h3>
               ${hasLeads ? `
                 <div class="hypatia-leads-actions">
-                  <button class="hypatia-btn-icon" id="hypatia-select-all" title="Select all">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="9 11 12 14 22 4"/>
-                      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                    </svg>
-                  </button>
                   <button class="hypatia-btn-icon" id="hypatia-export-leads" title="Export CSV">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -121,10 +119,10 @@ function getLeadsScreen(campaign) {
               ></textarea>
               <div class="hypatia-leads-controls">
                 <select class="hypatia-leads-limit-select" id="hypatia-leads-limit">
-                  <option value="10">10 leads</option>
-                  <option value="25" selected>25 leads</option>
-                  <option value="50">50 leads</option>
-                  <option value="100">100 leads</option>
+                  <option value="5">5 leads</option>
+                  <option value="10" selected>10 leads</option>
+                  <option value="15">15 leads</option>
+                  <option value="20">20 leads</option>
                 </select>
                 <button class="hypatia-btn hypatia-btn-generate" id="hypatia-generate-leads">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -395,45 +393,29 @@ function attachLeadsListeners() {
 
   // Manual lead entry - Add button
   const addManualBtn = document.getElementById('hypatia-add-manual-lead');
+  const manualFirstNameInput = document.getElementById('hypatia-manual-first-name');
+  const manualLastNameInput = document.getElementById('hypatia-manual-last-name');
   const manualEmailInput = document.getElementById('hypatia-manual-email');
 
   if (addManualBtn) {
     addManualBtn.addEventListener('click', handleAddManualLead);
   }
 
-  // Manual lead entry - Enter key and animation control
-  if (manualEmailInput) {
-    manualEmailInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleAddManualLead();
-      }
-    });
+  // Manual lead entry - Enter key on all input fields
+  const manualInputs = [manualFirstNameInput, manualLastNameInput, manualEmailInput];
+  manualInputs.forEach(input => {
+    if (input) {
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleAddManualLead();
+        }
+      });
+    }
+  });
 
-    // Stop animation when user focuses/types, restart when empty and blurred
-    manualEmailInput.addEventListener('focus', () => {
-      stopEmailPlaceholderAnimation();
-      if (manualEmailInput.value.length === 0) {
-        manualEmailInput.placeholder = 'Enter email address';
-      }
-    });
-
-    manualEmailInput.addEventListener('blur', () => {
-      if (manualEmailInput.value.length === 0) {
-        startEmailPlaceholderAnimation();
-      }
-    });
-
-    manualEmailInput.addEventListener('input', () => {
-      if (manualEmailInput.value.length > 0) {
-        stopEmailPlaceholderAnimation();
-        manualEmailInput.placeholder = 'Enter email address';
-      }
-    });
-
-    // Start the email placeholder animation
-    startEmailPlaceholderAnimation();
-  }
+  // Email placeholder animation (removed since we now have separate first/last name fields)
+  // The email field no longer needs the animated placeholder
 
   // Initial count
   updateSelectedCount();
@@ -454,32 +436,59 @@ function getSelectedLeads() {
 }
 
 function handleAddManualLead() {
-  const input = document.getElementById('hypatia-manual-email');
-  if (!input) return;
+  const firstNameInput = document.getElementById('hypatia-manual-first-name');
+  const lastNameInput = document.getElementById('hypatia-manual-last-name');
+  const emailInput = document.getElementById('hypatia-manual-email');
 
-  const email = input.value.trim();
-  if (!email) return;
+  if (!firstNameInput || !lastNameInput || !emailInput) return;
+
+  const firstName = firstNameInput.value.trim();
+  const lastName = lastNameInput.value.trim();
+  const email = emailInput.value.trim();
+
+  // Validate first name is required
+  if (!firstName) {
+    firstNameInput.classList.add('hypatia-input-error');
+    setTimeout(() => firstNameInput.classList.remove('hypatia-input-error'), 2000);
+    return;
+  }
+
+  // Validate last name is required
+  if (!lastName) {
+    lastNameInput.classList.add('hypatia-input-error');
+    setTimeout(() => lastNameInput.classList.remove('hypatia-input-error'), 2000);
+    return;
+  }
+
+  // Validate email is required
+  if (!email) {
+    emailInput.classList.add('hypatia-input-error');
+    setTimeout(() => emailInput.classList.remove('hypatia-input-error'), 2000);
+    return;
+  }
 
   // Basic email validation
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
-    input.classList.add('hypatia-input-error');
-    setTimeout(() => input.classList.remove('hypatia-input-error'), 2000);
+    emailInput.classList.add('hypatia-input-error');
+    setTimeout(() => emailInput.classList.remove('hypatia-input-error'), 2000);
     return;
   }
 
   // Check for duplicate email
   const isDuplicate = leadsForCampaign.some(lead => lead.email?.toLowerCase() === email.toLowerCase());
   if (isDuplicate) {
-    input.classList.add('hypatia-input-error');
-    setTimeout(() => input.classList.remove('hypatia-input-error'), 2000);
+    emailInput.classList.add('hypatia-input-error');
+    setTimeout(() => emailInput.classList.remove('hypatia-input-error'), 2000);
     return;
   }
 
-  // Create the manual lead object
+  // Create the manual lead object with first and last name
   const manualLead = {
     email: email,
-    name: '',
+    name: `${firstName} ${lastName}`,
+    first_name: firstName,
+    last_name: lastName,
     title: '',
     company: '',
     source: 'manual'
@@ -488,8 +497,10 @@ function handleAddManualLead() {
   // Add to the leads array
   leadsForCampaign.push(manualLead);
 
-  // Clear the input
-  input.value = '';
+  // Clear all inputs
+  firstNameInput.value = '';
+  lastNameInput.value = '';
+  emailInput.value = '';
 
   // Re-render the leads list
   const leadsListContainer = document.querySelector('.hypatia-leads-section');
@@ -497,7 +508,7 @@ function handleAddManualLead() {
     // Update the campaign reference
     leadsCampaign.leads = leadsForCampaign;
 
-    // Re-render the entire screen to update UI
+    // Re-render the entire screen to update UI - this keeps us on the leads screen
     if (typeof updatePanelContent === 'function') {
       updatePanelContent();
     } else {

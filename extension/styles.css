@@ -625,6 +625,8 @@
   margin: 0;
   flex: 1;
   align-content: stretch;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Campaign Group Styling (for leads/templates grouped by campaign) */
@@ -709,6 +711,8 @@
   text-align: left;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Campaigns step container */
@@ -834,16 +838,28 @@
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid #f1f3f4;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
 }
 
 .hypatia-campaign-analysis-row {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin-top: 6px;
   font-family: Roboto, Arial, sans-serif;
   font-size: 12px;
   line-height: 1.4;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.hypatia-campaign-analysis-row:last-child {
+  border-bottom: none;
 }
 
 .hypatia-analysis-icon {
@@ -857,6 +873,11 @@
   color: #3c4043;
   flex: 1;
   word-wrap: break-word;
+  overflow: hidden;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 /* Urgency badges */
@@ -888,6 +909,180 @@
   background: #ffebee;
   color: #c62828;
   margin-left: 4px;
+}
+
+/* Sent email card styles */
+.hypatia-sent-status {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.hypatia-status-replied {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.hypatia-status-scheduled {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.hypatia-status-sent {
+  background: #f5f5f5;
+  color: #616161;
+}
+
+/* Thread detail modal */
+.hypatia-thread-detail-modal {
+  max-width: 700px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.hypatia-thread-overview {
+  background: #f8f9fa;
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.hypatia-thread-timeline {
+  margin-top: 20px;
+}
+
+.hypatia-timeline-title {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5f6368;
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hypatia-thread-item {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e8eaed;
+}
+
+.hypatia-thread-pending {
+  border-left: 3px solid #1a73e8;
+  background: #f8fbff;
+}
+
+.hypatia-thread-sent {
+  border-left: 3px solid #34a853;
+}
+
+.hypatia-thread-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hypatia-thread-content {
+  flex: 1;
+}
+
+.hypatia-thread-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.hypatia-thread-label {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #5f6368;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.hypatia-thread-timestamp {
+  font-size: 11px;
+  color: #80868b;
+}
+
+.hypatia-thread-subject {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #202124;
+  margin-bottom: 8px;
+}
+
+.hypatia-thread-body {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #5f6368;
+  white-space: pre-wrap;
+}
+
+.hypatia-thread-preview {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  color: #80868b;
+  font-style: italic;
+}
+
+.hypatia-status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.hypatia-status-success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.hypatia-status-pending {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.hypatia-spinner-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+.hypatia-spinner {
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #1a73e8;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: hypatia-spin 1s linear infinite;
+}
+
+@keyframes hypatia-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.hypatia-no-items {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: #80868b;
+  text-align: center;
+  padding: 20px;
 }
 
 /* Legacy list styles (kept for backwards compatibility) */
@@ -2247,6 +2442,31 @@
 .hypatia-manual-input-row {
   display: flex;
   gap: 10px;
+}
+
+.hypatia-manual-name-input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hypatia-manual-name-input:focus {
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+}
+
+.hypatia-manual-name-input::placeholder {
+  color: #9aa0a6;
+}
+
+.hypatia-manual-name-input.hypatia-input-error {
+  border-color: #ea4335;
+  box-shadow: 0 0 0 2px rgba(234, 67, 53, 0.1);
+  animation: shake 0.3s ease;
 }
 
 .hypatia-manual-email-input {

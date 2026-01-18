@@ -170,6 +170,7 @@ class CreateFollowupPlanRequest(BaseModel):
     user_id: str
     campaign_id: str
     emails: list[dict]
+    timing_config: Optional[dict] = None  # Optional timing configuration
 
 
 class FollowupConfigUpdate(BaseModel):
@@ -908,6 +909,11 @@ async def create_followup_plan(request: CreateFollowupPlanRequest):
     # Initialize services
     agent_supabase = AgentSupabaseClient()
     followup_agent = FollowupAgent(agent_supabase)
+    followup_service = FollowupService(agent_supabase)
+
+    # Save timing config if provided
+    if request.timing_config:
+        followup_service.update_followup_config(request.campaign_id, request.timing_config)
 
     # Fetch campaign data for style and CTA
     cta_data = supabase_request(
@@ -1120,9 +1126,9 @@ async def generate_template(request: TemplateGenerateRequest):
         # Build style prompt, incorporating current template if provided
         style_prompt = request.style_prompt
 
-        # FEEDBACK LOOP: Enhance prompt with learned patterns
-        style_prompt = feedback_service.enhance_style_prompt(style_prompt, request.user_id)
-        print(f"[TemplateGen] Enhanced style prompt with learned patterns")
+        # FEEDBACK LOOP: Enhance prompt with example templates
+        style_prompt = await feedback_service.enhance_with_examples(style_prompt, request.user_id)
+        print(f"[TemplateGen] Enhanced style prompt with example templates")
         if request.current_subject or request.current_body:
             style_prompt += f"\n\nThe user has a current draft they want to improve:\n"
             if request.current_subject:
@@ -1475,6 +1481,110 @@ async def get_user_templates(user_id: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sent/user/{user_id}")
+async def get_user_sent_emails(user_id: str):
+    """
+    Retrieve all sent emails for a user with follow-up and reply status.
+    Returns sent emails grouped by campaign with aggregate follow-up stats.
+    """
+    # Validate user_id is a valid UUID
+    if not is_valid_uuid(user_id):
+        return {"sent_emails": [], "count": 0, "error": "Invalid user_id"}
+
+    try:
+        # Query sent_emails with JOIN to scheduled_followups
+        # For each sent email, get:
+        # - Email details (id, subject, recipient_to, sent_at, reply_detected_at)
+        # - Campaign info (campaign_id via email_campaigns junction table)
+        # - Follow-up stats (count pending, next scheduled date)
+        # - Reply status (reply_detected_at != NULL)
+
+        query = """
+        SELECT
+            se.id,
+            se.subject,
+            se.recipient_to,
+            se.sent_at,
+            se.reply_detected_at,
+            se.thread_id,
+            se.body,
+            ec.campaign_id,
+            c.representative_subject as campaign_subject,
+            COUNT(sf.id) FILTER (WHERE sf.status = 'pending') as pending_followups,
+            MIN(sf.scheduled_for) FILTER (WHERE sf.status = 'pending') as next_followup_date
+        FROM sent_emails se
+        LEFT JOIN email_campaigns ec ON se.id = ec.email_id
+        LEFT JOIN campaigns c ON ec.campaign_id = c.id
+        LEFT JOIN scheduled_followups sf ON se.id = sf.original_email_id
+        WHERE se.user_id = %s AND (se.is_followup = false OR se.is_followup IS NULL)
+        GROUP BY se.id, ec.campaign_id, c.representative_subject
+        ORDER BY se.sent_at DESC
+        """
+
+        result = await async_supabase_client.raw_query(query, (user_id,))
+        sent_emails = result or []
+
+        return {
+            "sent_emails": sent_emails,
+            "count": len(sent_emails)
+        }
+    except Exception as e:
+        print(f"[SentEmails] Error: {e}")
+        return {"sent_emails": [], "count": 0, "error": str(e)}
+
+
+@app.get("/sent/thread/{thread_id}")
+async def get_thread_details(thread_id: str, user_id: str):
+    """
+    Get complete thread timeline including:
+    - Original sent email
+    - All sent follow-ups
+    - Pending scheduled follow-ups
+    - Detected replies
+    """
+    try:
+        # Query chronological thread view
+        query = """
+        SELECT
+            'sent' as type,
+            se.id,
+            se.subject,
+            se.body,
+            se.sent_at as timestamp,
+            se.is_followup,
+            NULL as status,
+            NULL::integer as sequence_number
+        FROM sent_emails se
+        WHERE se.thread_id = %s AND se.user_id = %s
+
+        UNION ALL
+
+        SELECT
+            'scheduled' as type,
+            sf.id::text,
+            sf.subject,
+            sf.body,
+            sf.scheduled_for as timestamp,
+            true as is_followup,
+            sf.status,
+            sf.sequence_number
+        FROM scheduled_followups sf
+        WHERE sf.thread_id = %s AND sf.user_id = %s AND sf.status = 'pending'
+
+        ORDER BY timestamp ASC
+        """
+
+        result = await async_supabase_client.raw_query(query, (thread_id, user_id, thread_id, user_id))
+
+        return {
+            "thread": result or [],
+            "thread_id": thread_id
+        }
+    except Exception as e:
+        print(f"[ThreadDetails] Error: {e}")
+        return {"thread": [], "error": str(e)}
 
 
 @app.get("/campaigns/{campaign_id}/saved-content")

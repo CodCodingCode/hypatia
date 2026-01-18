@@ -13,6 +13,7 @@ from ..base_agent import BaseAgent
 from ..services.llm_client import LLMClient
 from ..services.supabase_client import SupabaseClient
 from .fact_extractor import FactExtractorAgent
+from ..utils.name_parser import parse_display_name, format_full_name
 
 
 class FollowupAgent(BaseAgent):
@@ -39,6 +40,7 @@ class FollowupAgent(BaseAgent):
         style_prompt: str = "",
         enrichments: dict = None,
         campaign_id: str = None,
+        sender_name: str = "",
     ) -> list:
         """
         Create personalized follow-up plans for sent emails.
@@ -49,6 +51,7 @@ class FollowupAgent(BaseAgent):
             style_prompt: User's writing style from campaign_email_styles
             enrichments: Dict mapping email -> enrichment data
             campaign_id: Optional campaign ID for config lookup
+            sender_name: Full name of sender for email signature
 
         Returns:
             List of follow-up plans with timing and AI-generated content
@@ -68,6 +71,7 @@ class FollowupAgent(BaseAgent):
                 style_prompt=style_prompt,
                 enrichment=enrichment,
                 config=config,
+                sender_name=sender_name,
             )
 
             email_plan = {
@@ -90,6 +94,7 @@ class FollowupAgent(BaseAgent):
         style_prompt: str,
         enrichment: dict,
         config: dict,
+        sender_name: str = "",
     ) -> list:
         """Generate 3 personalized follow-up emails using LLM."""
 
@@ -125,6 +130,7 @@ class FollowupAgent(BaseAgent):
                 enrichment=enrichment,
                 followup_type=ft["type"],
                 tone_guidance=ft["tone"],
+                sender_name=sender_name,
             )
 
             followups.append({
@@ -146,6 +152,7 @@ class FollowupAgent(BaseAgent):
         enrichment: dict,
         followup_type: str,
         tone_guidance: str,
+        sender_name: str = "",
     ) -> dict:
         """Generate a single follow-up email using LLM."""
 
@@ -167,6 +174,8 @@ class FollowupAgent(BaseAgent):
             title = person.get("title", "")
             company = person.get("company", {}).get("name", "") if person.get("company") else ""
 
+        signature_instruction = f"Sign off with 'Best,\\n{sender_name}'" if sender_name else "Sign off with just 'Best'"
+
         system_prompt = f"""You write very brief follow-up emails.
 
 CRITICAL RULES:
@@ -175,7 +184,7 @@ CRITICAL RULES:
 - Keep it to 2-3 sentences MAX
 - Just politely bump the thread asking if they had a chance to look at your previous email
 - The subject MUST be exactly "Re: " followed by the original subject
-- Sign off with just "Best" - no name needed
+- {signature_instruction}
 
 {f"STYLE: {style_prompt}" if style_prompt else ""}"""
 
@@ -193,21 +202,22 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
             result = await self.llm.complete_json(system_prompt, user_prompt)
             return {
                 "subject": result.get("subject", f"Re: {email.get('subject', 'Following up')}"),
-                "body": result.get("body", self._get_fallback_body(first_name, followup_type)),
+                "body": result.get("body", self._get_fallback_body(first_name, followup_type, sender_name)),
             }
         except Exception as e:
             print(f"LLM followup generation failed: {e}")
             return {
                 "subject": f"Re: {email.get('subject', 'Following up')}",
-                "body": self._get_fallback_body(first_name, followup_type),
+                "body": self._get_fallback_body(first_name, followup_type, sender_name),
             }
 
-    def _get_fallback_body(self, name: str, followup_type: str) -> str:
+    def _get_fallback_body(self, name: str, followup_type: str, sender_name: str = "") -> str:
         """Return a safe fallback template if LLM fails."""
+        signature = f"Best,\n{sender_name}" if sender_name else "Best"
         templates = {
-            "gentle_reminder": f"Hi {name},\n\nJust wanted to bump this up - did you get a chance to look at my previous email?\n\nBest",
-            "add_value": f"Hi {name},\n\nFollowing up on my last email. Let me know if you have any questions.\n\nBest",
-            "final_attempt": f"Hi {name},\n\nCircling back one more time. No worries if the timing isn't right.\n\nBest",
+            "gentle_reminder": f"Hi {name},\n\nJust wanted to bump this up - did you get a chance to look at my previous email?\n\n{signature}",
+            "add_value": f"Hi {name},\n\nFollowing up on my last email. Let me know if you have any questions.\n\n{signature}",
+            "final_attempt": f"Hi {name},\n\nCircling back one more time. No worries if the timing isn't right.\n\n{signature}",
         }
         return templates.get(followup_type, templates["gentle_reminder"])
 
@@ -253,12 +263,22 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
         """
         from ..services.followup_service import FollowupService
 
+        # Fetch user's display_name and parse it
+        sender_name = ""
+        user_result = self.supabase.request(f"users?id=eq.{user_id}&select=display_name")
+        if user_result and len(user_result) > 0:
+            display_name = user_result[0].get("display_name", "")
+            if display_name:
+                parsed = parse_display_name(display_name)
+                sender_name = format_full_name(parsed["first_name"], parsed["last_name"])
+
         plans = await self.plan(
             emails=emails,
             cta=cta,
             style_prompt=style_prompt,
             enrichments=enrichments,
             campaign_id=campaign_id,
+            sender_name=sender_name,
         )
 
         followup_service = FollowupService(self.supabase)
@@ -309,6 +329,15 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
         timing = timing or {'initial': 1, 'followup_1': 3, 'followup_2': 7, 'followup_3': 14}
         sample_emails = sample_emails or []
 
+        # Fetch user's display_name and parse it
+        sender_name = ""
+        user_result = self.supabase.request(f"users?id=eq.{user_id}&select=display_name")
+        if user_result and len(user_result) > 0:
+            display_name = user_result[0].get("display_name", "")
+            if display_name:
+                parsed = parse_display_name(display_name)
+                sender_name = format_full_name(parsed["first_name"], parsed["last_name"])
+
         # FACT EXTRACTION: Extract verifiable facts from sample emails first
         print("[CadenceGen] Step 1: Extracting facts from sample emails...")
         extracted_facts = await self.fact_extractor.extract_facts(
@@ -358,6 +387,7 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
                 sample_emails=sample_emails,
                 campaign=campaign,
                 grounded_facts=grounded_facts,  # Pass grounded facts
+                sender_name=sender_name,
             )
 
             cadence.append({
@@ -378,6 +408,7 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
         sample_emails: list,
         campaign: dict,
         grounded_facts: str = "",  # NEW: Grounded facts for hallucination prevention
+        sender_name: str = "",
     ) -> dict:
         """Generate a single email for the cadence using only grounded facts."""
 
@@ -391,6 +422,8 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
                 subject = email.get('subject', '')
                 body = email.get('body', email.get('snippet', ''))[:300]
                 email_context += f"\n--- Sample {i} ---\nSubject: {subject}\nBody: {body}\n"
+
+        signature_instruction = f"Sign off with 'Best,\\n{sender_name}'" if sender_name else "Sign off with just 'Best'"
 
         system_prompt = f"""You write {'initial outreach' if is_initial else 'follow-up'} emails using ONLY the allowed facts below.
 
@@ -407,7 +440,7 @@ STYLE RULES:
 - Keep emails SHORT (2-4 sentences for follow-ups, 4-6 for initial)
 - Be professional but personable
 - {"Subject should be attention-grabbing but not clickbait" if is_initial else "Subject MUST start with 'Re: ' to indicate follow-up"}
-- Sign off with just "Best" - no name needed
+- {signature_instruction}
 
 {f"STYLE GUIDANCE: {style_prompt}" if style_prompt else ""}
 {email_context}"""
@@ -429,30 +462,31 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
             result = await self.llm.complete_json(system_prompt, user_prompt)
             return {
                 'subject': result.get('subject', 'Quick question, {{first_name}}' if is_initial else 'Re: Quick question'),
-                'body': result.get('body', self._get_fallback_cadence_email(email_type)['body']),
+                'body': result.get('body', self._get_fallback_cadence_email(email_type, sender_name)['body']),
             }
         except Exception as e:
             print(f"Cadence email generation failed: {e}")
-            return self._get_fallback_cadence_email(email_type)
+            return self._get_fallback_cadence_email(email_type, sender_name)
 
-    def _get_fallback_cadence_email(self, email_type: str) -> dict:
+    def _get_fallback_cadence_email(self, email_type: str, sender_name: str = "") -> dict:
         """Fallback templates if LLM fails. Only uses {first_name} and {last_name} placeholders."""
+        signature = f"Best,\n{sender_name}" if sender_name else "Best"
         templates = {
             'initial': {
                 'subject': 'Quick question, {first_name}',
-                'body': 'Hi {first_name},\n\nI wanted to reach out regarding a potential opportunity.\n\nWould you be open to a quick conversation?\n\nBest',
+                'body': f'Hi {{first_name}},\n\nI wanted to reach out regarding a potential opportunity.\n\nWould you be open to a quick conversation?\n\n{signature}',
             },
             'followup_1': {
                 'subject': 'Re: Quick question',
-                'body': 'Hi {first_name},\n\nJust wanted to bump this up - did you get a chance to see my previous email?\n\nBest',
+                'body': f'Hi {{first_name}},\n\nJust wanted to bump this up - did you get a chance to see my previous email?\n\n{signature}',
             },
             'followup_2': {
                 'subject': 'Re: Quick question',
-                'body': 'Hi {first_name},\n\nFollowing up one more time. Let me know if you have any questions.\n\nBest',
+                'body': f'Hi {{first_name}},\n\nFollowing up one more time. Let me know if you have any questions.\n\n{signature}',
             },
             'followup_3': {
                 'subject': 'Re: Quick question',
-                'body': 'Hi {first_name},\n\nCircling back one last time. No worries if the timing is not right - feel free to reach out whenever it makes sense.\n\nBest',
+                'body': f'Hi {{first_name}},\n\nCircling back one last time. No worries if the timing is not right - feel free to reach out whenever it makes sense.\n\n{signature}',
             },
         }
         return templates.get(email_type, templates['initial'])
@@ -461,9 +495,20 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
         self,
         email_type: str,
         campaign_id: str,
+        user_id: str = None,
         tone_guidance: str = "",
     ) -> dict:
         """Regenerate a single email with fresh content."""
+        # Fetch user's display_name and parse it
+        sender_name = ""
+        if user_id:
+            user_result = self.supabase.request(f"users?id=eq.{user_id}&select=display_name")
+            if user_result and len(user_result) > 0:
+                display_name = user_result[0].get("display_name", "")
+                if display_name:
+                    parsed = parse_display_name(display_name)
+                    sender_name = format_full_name(parsed["first_name"], parsed["last_name"])
+
         # Get campaign data
         campaign = {}
         if campaign_id and not campaign_id.startswith("new_"):
@@ -486,6 +531,7 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
             style_prompt=style_prompt,
             sample_emails=[],
             campaign=campaign,
+            sender_name=sender_name,
         )
 
     def _default_tone_for_type(self, email_type: str) -> str:

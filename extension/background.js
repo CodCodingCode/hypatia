@@ -256,6 +256,7 @@ async function recoverUserSession() {
       await chrome.storage.local.set({
         userId: userId,
         userEmail: userInfo.email,
+        displayName: userInfo.displayName,
         onboardingComplete: true
       });
       console.log('[Hypatia] Recovery successful! Restored userId:', userId);
@@ -496,7 +497,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Followup system handlers
   if (request.action === 'createFollowupPlan') {
-    handleCreateFollowupPlan(request.userId, request.campaignId, request.emails)
+    handleCreateFollowupPlan(request.userId, request.campaignId, request.emails, request.timingConfig)
       .then(sendResponse);
     return true;
   }
@@ -583,6 +584,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'getAllTemplates') {
     handleGetAllTemplates(request.userId)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getAllSentEmails') {
+    handleGetAllSentEmails(request.userId)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getThreadDetails') {
+    handleGetThreadDetails(request.threadId, request.userId)
       .then(sendResponse);
     return true;
   }
@@ -710,57 +723,115 @@ async function handleGetCampaigns(userId) {
 
 async function updateCampaignFields(campaignId, fields) {
   /**
-   * Update campaign CTA and/or contact description in Supabase.
-   * fields can contain: cta_description, contact_description
+   * Update campaign CTA, contact description, and/or style description in Supabase.
+   * fields can contain: cta_description, contact_description, style_description
    */
   try {
+    // First verify the campaign exists to prevent foreign key constraint violations
+    const campaignExists = await supabaseRequest(
+      `campaigns?id=eq.${campaignId}&select=id`,
+      'GET'
+    );
+
+    if (!campaignExists || campaignExists.length === 0) {
+      console.error('[Hypatia] Campaign not found:', campaignId);
+      return { success: false, error: 'Campaign not found. Please ensure the campaign is created first.' };
+    }
+
     // Update CTA description if provided
     if (fields.cta_description !== undefined) {
-      // Check if campaign_ctas entry exists
-      const existingCta = await supabaseRequest(
-        `campaign_ctas?campaign_id=eq.${campaignId}&select=id`,
-        'GET'
-      );
+      try {
+        // Check if campaign_ctas entry exists
+        const existingCta = await supabaseRequest(
+          `campaign_ctas?campaign_id=eq.${campaignId}&select=id`,
+          'GET'
+        );
 
-      if (existingCta && existingCta.length > 0) {
-        // Update existing
-        await supabaseRequest(
-          `campaign_ctas?campaign_id=eq.${campaignId}`,
-          'PATCH',
-          { cta_description: fields.cta_description }
-        );
-      } else {
-        // Insert new
-        await supabaseRequest(
-          'campaign_ctas',
-          'POST',
-          { campaign_id: campaignId, cta_description: fields.cta_description }
-        );
+        if (existingCta && existingCta.length > 0) {
+          // Update existing
+          await supabaseRequest(
+            `campaign_ctas?campaign_id=eq.${campaignId}`,
+            'PATCH',
+            { cta_description: fields.cta_description }
+          );
+        } else {
+          // Insert new
+          await supabaseRequest(
+            'campaign_ctas',
+            'POST',
+            { campaign_id: campaignId, cta_description: fields.cta_description }
+          );
+        }
+      } catch (error) {
+        console.error('[Hypatia] Failed to update CTA description:', error);
+        throw error; // Re-throw to be caught by outer catch
       }
     }
 
     // Update contact description if provided
     if (fields.contact_description !== undefined) {
-      // Check if campaign_contacts entry exists
-      const existingContact = await supabaseRequest(
-        `campaign_contacts?campaign_id=eq.${campaignId}&select=id`,
-        'GET'
-      );
+      try {
+        // Check if campaign_contacts entry exists
+        const existingContact = await supabaseRequest(
+          `campaign_contacts?campaign_id=eq.${campaignId}&select=id`,
+          'GET'
+        );
 
-      if (existingContact && existingContact.length > 0) {
-        // Update existing
-        await supabaseRequest(
-          `campaign_contacts?campaign_id=eq.${campaignId}`,
-          'PATCH',
-          { contact_description: fields.contact_description }
+        if (existingContact && existingContact.length > 0) {
+          // Update existing
+          await supabaseRequest(
+            `campaign_contacts?campaign_id=eq.${campaignId}`,
+            'PATCH',
+            { contact_description: fields.contact_description }
+          );
+        } else {
+          // Insert new
+          await supabaseRequest(
+            'campaign_contacts',
+            'POST',
+            { campaign_id: campaignId, contact_description: fields.contact_description }
+          );
+        }
+      } catch (error) {
+        console.error('[Hypatia] Failed to update contact description:', error);
+        throw error; // Re-throw to be caught by outer catch
+      }
+    }
+
+    // Update style description if provided
+    if (fields.style_description !== undefined) {
+      try {
+        // Check if campaign_email_styles entry exists
+        const existingStyle = await supabaseRequest(
+          `campaign_email_styles?campaign_id=eq.${campaignId}&select=id`,
+          'GET'
         );
-      } else {
-        // Insert new
-        await supabaseRequest(
-          'campaign_contacts',
-          'POST',
-          { campaign_id: campaignId, contact_description: fields.contact_description }
-        );
+
+        if (existingStyle && existingStyle.length > 0) {
+          // Update existing - update both one_sentence_description and style_analysis_prompt to keep them in sync
+          await supabaseRequest(
+            `campaign_email_styles?campaign_id=eq.${campaignId}`,
+            'PATCH',
+            {
+              one_sentence_description: fields.style_description,
+              style_analysis_prompt: fields.style_description
+            }
+          );
+        } else {
+          // Insert new - set both fields to the same value
+          await supabaseRequest(
+            'campaign_email_styles',
+            'POST',
+            {
+              campaign_id: campaignId,
+              one_sentence_description: fields.style_description,
+              style_analysis_prompt: fields.style_description
+            }
+          );
+        }
+      } catch (error) {
+        console.error('[Hypatia] Failed to update style description:', error);
+        throw error; // Re-throw to be caught by outer catch
       }
     }
 
@@ -810,22 +881,43 @@ async function createNewCampaign(userId, campaignData) {
     const campaignId = newCampaign.id;
     console.log('[Hypatia] Created new campaign with ID:', campaignId);
 
+    // Verify campaign was actually created before adding related data
+    const verifyResult = await supabaseRequest(
+      `campaigns?id=eq.${campaignId}&select=id`,
+      'GET'
+    );
+
+    if (!verifyResult || verifyResult.length === 0) {
+      console.error('[Hypatia] Campaign creation verification failed');
+      throw new Error('Campaign was not properly created in database');
+    }
+
     // Save CTA description if provided
     if (campaignData.cta_description) {
-      await supabaseRequest(
-        'campaign_ctas',
-        'POST',
-        { campaign_id: campaignId, cta_description: campaignData.cta_description }
-      );
+      try {
+        await supabaseRequest(
+          'campaign_ctas',
+          'POST',
+          { campaign_id: campaignId, cta_description: campaignData.cta_description }
+        );
+      } catch (error) {
+        console.error('[Hypatia] Failed to save CTA description:', error);
+        // Don't fail the whole operation, campaign was created successfully
+      }
     }
 
     // Save contact description if provided
     if (campaignData.contact_description) {
-      await supabaseRequest(
-        'campaign_contacts',
-        'POST',
-        { campaign_id: campaignId, contact_description: campaignData.contact_description }
-      );
+      try {
+        await supabaseRequest(
+          'campaign_contacts',
+          'POST',
+          { campaign_id: campaignId, contact_description: campaignData.contact_description }
+        );
+      } catch (error) {
+        console.error('[Hypatia] Failed to save contact description:', error);
+        // Don't fail the whole operation, campaign was created successfully
+      }
     }
 
     return { success: true, campaignId: campaignId, campaign: newCampaign };
@@ -885,6 +977,7 @@ async function handleOnboarding(tabId) {
       await chrome.storage.local.set({
         onboardingComplete: true,
         userEmail: userInfo.email,
+        displayName: userInfo.displayName,
         userId: user.id
       });
       console.log('[Hypatia] Onboarding complete with', backendResult.campaigns.length, 'campaigns');
@@ -893,6 +986,7 @@ async function handleOnboarding(tabId) {
       // Still store userId for debugging but not complete status
       await chrome.storage.local.set({
         userEmail: userInfo.email,
+        displayName: userInfo.displayName,
         userId: user.id
       });
     }
@@ -1012,7 +1106,7 @@ function sendProgressToTab(tabId, data) {
 }
 
 async function checkOnboardingStatus() {
-  const data = await chrome.storage.local.get(['onboardingComplete', 'userEmail', 'userId']);
+  const data = await chrome.storage.local.get(['onboardingComplete', 'userEmail', 'userId', 'displayName']);
 
   // If storage is empty but user might be logged in, try to recover
   if (!data.userId) {
@@ -1020,11 +1114,12 @@ async function checkOnboardingStatus() {
     const recoveredUserId = await recoverUserSession();
     if (recoveredUserId) {
       // Re-read storage after recovery
-      const newData = await chrome.storage.local.get(['onboardingComplete', 'userEmail', 'userId']);
+      const newData = await chrome.storage.local.get(['onboardingComplete', 'userEmail', 'userId', 'displayName']);
       return {
         complete: newData.onboardingComplete || false,
         email: newData.userEmail || null,
-        userId: newData.userId || null
+        userId: newData.userId || null,
+        displayName: newData.displayName || null
       };
     }
   }
@@ -1032,7 +1127,8 @@ async function checkOnboardingStatus() {
   return {
     complete: data.onboardingComplete || false,
     email: data.userEmail || null,
-    userId: data.userId || null
+    userId: data.userId || null,
+    displayName: data.displayName || null
   };
 }
 
@@ -1114,16 +1210,23 @@ setInterval(async () => {
 // FOLLOWUP API HANDLERS
 // =============================================================================
 
-async function handleCreateFollowupPlan(userId, campaignId, emails) {
+async function handleCreateFollowupPlan(userId, campaignId, emails, timingConfig = null) {
   try {
+    const requestBody = {
+      user_id: userId,
+      campaign_id: campaignId,
+      emails: emails
+    };
+
+    // Add timing config if provided
+    if (timingConfig) {
+      requestBody.timing_config = timingConfig;
+    }
+
     const response = await fetch(`${CONFIG.API_URL}/followups/plan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_id: userId,
-        campaign_id: campaignId,
-        emails: emails
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -1491,6 +1594,60 @@ async function handleGetAllTemplates(userId) {
   }
 }
 
+async function handleGetAllSentEmails(userId) {
+  /**
+   * Fetch all sent emails for a user (for sent emails list view).
+   */
+  try {
+    console.log('[Hypatia] Fetching all sent emails for user:', userId);
+
+    const response = await fetch(`${CONFIG.API_URL}/sent/user/${userId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to fetch sent emails: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Fetched all sent emails:', result.count);
+
+    return { success: true, sentEmails: result.sent_emails || [], count: result.count };
+  } catch (error) {
+    console.error('[Hypatia] Error fetching all sent emails:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleGetThreadDetails(threadId, userId) {
+  /**
+   * Fetch complete thread timeline with follow-ups and replies.
+   */
+  try {
+    console.log('[Hypatia] Fetching thread details:', threadId);
+
+    const response = await fetch(`${CONFIG.API_URL}/sent/thread/${threadId}?user_id=${userId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to fetch thread details: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Fetched thread items:', result.thread?.length);
+
+    return { success: true, thread: result.thread || [] };
+  } catch (error) {
+    console.error('[Hypatia] Error fetching thread details:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // =============================================================================
 // EMAIL SENDING HANDLERS
 // =============================================================================
@@ -1618,18 +1775,23 @@ async function handleAnalyzeContactPreference(text) {
         messages: [
           {
             role: 'system',
-            content: `You analyze contact preference descriptions to identify which targeting categories are mentioned.
+            content: `You analyze contact preference descriptions to identify which targeting categories are mentioned. Multiple categories can be true at once.
 
 Respond ONLY with a JSON object with these exact keys, each true or false:
-- location: geographic location, city, region, country mentioned
-- job_title: specific job titles, roles, or positions mentioned
-- experience: company stage, company size, or company maturity mentioned (e.g., "Series A", "Fortune 500", "startups", "enterprise")
-- education: degrees, schools, certifications, educational background mentioned
-- industry: EXPLICIT mention of a specific sector or vertical (e.g., "healthcare", "fintech", "real estate", "SaaS")
-- skills: specific skills, technologies, or competencies mentioned
+- location: geographic location, city, region, country mentioned (e.g., "San Francisco", "Bay Area", "NYC", "remote")
+- job_title: specific job titles, roles, or positions mentioned (e.g., "CTO", "VP Sales", "Engineer", "Founder")
+- experience: company stage, company size, or company maturity mentioned (e.g., "Series A", "Fortune 500", "startups", "enterprise", "early-stage")
+- education: degrees, schools, certifications, educational background mentioned (e.g., "MBA", "Stanford", "PhD", "CS degree")
+- industry: EXPLICIT mention of a specific sector or vertical (e.g., "healthcare", "fintech", "real estate", "SaaS", "biotech")
+- skills: specific skills, technologies, or competencies mentioned (e.g., "Python", "machine learning", "sales", "product design")
+
+IMPORTANT: Mark ALL categories that are mentioned in the text. Multiple categories should be true when applicable.
 
 Example input: "CTOs at Series A startups in San Francisco"
-Example output: {"location":true,"job_title":true,"experience":true,"education":false,"industry":false,"skills":false}`
+Example output: {"location":true,"job_title":true,"experience":true,"education":false,"industry":false,"skills":false}
+
+Example input: "Software engineers with Python and ML experience at healthcare companies"
+Example output: {"location":false,"job_title":true,"experience":false,"education":false,"industry":true,"skills":true}`
           },
           {
             role: 'user',

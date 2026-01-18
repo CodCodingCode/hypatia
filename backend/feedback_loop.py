@@ -721,6 +721,79 @@ class FeedbackLoopService:
 
         return original_prompt + "\n".join(enhancements)
 
+    async def get_example_templates(
+        self,
+        user_id: str,
+        limit: int = 3
+    ) -> List[Dict[str, str]]:
+        """
+        Retrieve most recent edited templates for example-based prompting.
+
+        Returns list of {edited_subject, edited_body, created_at} dicts.
+        Used for showing the AI actual examples instead of abstract preferences.
+        """
+        if not self._async_supabase_client:
+            return []
+
+        try:
+            # Use Supabase query builder to fetch recent edited templates
+            result = await self._async_supabase_client.request(
+                f"template_edits?user_id=eq.{user_id}&select=edited_subject,edited_body,created_at&order=created_at.desc&limit={limit}",
+                'GET'
+            )
+
+            if result and isinstance(result, list):
+                # Filter out any entries with null values
+                return [
+                    item for item in result
+                    if item.get('edited_subject') and item.get('edited_body')
+                ]
+            return []
+
+        except Exception as e:
+            print(f"Error fetching example templates: {e}")
+            return []
+
+    async def enhance_with_examples(
+        self,
+        original_prompt: str,
+        user_id: str
+    ) -> str:
+        """
+        Enhance prompt with actual template examples instead of abstract preferences.
+
+        This is the NEW feedback loop closure - we show the AI exactly what
+        templates the user edited and approved, instructing it to make new ones
+        very similar with minimal changes.
+        """
+        examples = await self.get_example_templates(user_id, limit=3)
+
+        if not examples:
+            # No examples yet - return original prompt
+            return original_prompt
+
+        enhancements = ["\n\n[TEMPLATE EXAMPLES - From your previous edits]"]
+        enhancements.append("The user has edited templates before. Here are examples of their approved style:\n")
+
+        for i, example in enumerate(examples, 1):
+            enhancements.append(f"EXAMPLE {i}:")
+            enhancements.append(f"SUBJECT: {example['edited_subject']}")
+            enhancements.append(f"BODY:")
+            enhancements.append(example['edited_body'])
+            enhancements.append("")  # Blank line between examples
+
+        enhancements.append("INSTRUCTIONS: Generate new templates using a VERY similar structure, tone,")
+        enhancements.append("and style to these examples. Change ONLY what's necessary for the new")
+        enhancements.append("context (company name, specific details, CTA). Keep the same:")
+        enhancements.append("- Subject line format and length")
+        enhancements.append("- Email structure and paragraph breaks")
+        enhancements.append("- Tone and language style")
+        enhancements.append("- Formatting (bullets, spacing, etc.)")
+        enhancements.append("")
+        enhancements.append(f"(Based on {len(examples)} recent template(s) you edited)")
+
+        return original_prompt + "\n".join(enhancements)
+
     # =========================================================================
     # HELPERS & REPORTING
     # =========================================================================
