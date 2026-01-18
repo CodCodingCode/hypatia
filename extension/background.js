@@ -1629,7 +1629,7 @@ Respond ONLY with a JSON object with these exact keys, each true or false:
 - skills: specific skills, technologies, or competencies mentioned
 
 Example input: "CTOs at Series A startups in San Francisco"
-Example output: {"location":true,"job_title":true,"experience":false,"education":false,"industry":true,"skills":false}`
+Example output: {"location":true,"job_title":true,"experience":true,"education":false,"industry":false,"skills":false}`
           },
           {
             role: 'user',

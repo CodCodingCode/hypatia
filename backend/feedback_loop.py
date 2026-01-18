@@ -16,8 +16,9 @@ import os
 import re
 from typing import Optional, Dict, List, Any, Tuple
 from datetime import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from collections import Counter
+import json
 
 
 @dataclass
@@ -110,10 +111,11 @@ class FeedbackLoopService:
     5. Templates get better over time, requiring fewer edits
     """
 
-    def __init__(self):
+    def __init__(self, async_supabase_client=None):
         self._templates: Dict[str, TemplateRecord] = {}
         self._user_preferences: Dict[str, UserPreferences] = {}
         self._query_cache: Dict[str, Dict] = {}
+        self._async_supabase_client = async_supabase_client
 
     # =========================================================================
     # TEMPLATE RECORDING
@@ -140,7 +142,7 @@ class FeedbackLoopService:
         if user_id not in self._user_preferences:
             self._user_preferences[user_id] = UserPreferences(user_id=user_id)
 
-    def record_template_edited(
+    async def record_template_edited(
         self,
         template_id: str,
         new_subject: str,
@@ -176,8 +178,24 @@ class FeedbackLoopService:
         )
         record.edit_analysis = analysis
 
+        # Save edit to database (full history)
+        await self._save_edit_to_db(
+            template_id=template_id,
+            user_id=user_id,
+            campaign_id=record.campaign_id,
+            original_subject=record.original_subject,
+            original_body=record.original_body,
+            edited_subject=new_subject,
+            edited_body=new_body,
+            analysis=analysis
+        )
+
         # Update user preferences based on this edit
         self._update_preferences_from_edit(user_id, analysis, record)
+
+        # Save updated preferences to database
+        if user_id in self._user_preferences:
+            await self._save_preferences_to_db(user_id, self._user_preferences[user_id])
 
         # Return analysis for logging/display
         return {
@@ -406,6 +424,227 @@ class FeedbackLoopService:
         prefs.confidence = min(prefs.samples_analyzed / 5, 1.0)  # 5+ samples = 100%
 
     # =========================================================================
+    # DATABASE PERSISTENCE
+    # =========================================================================
+
+    async def _save_preferences_to_db(self, user_id: str, preferences: UserPreferences) -> bool:
+        """Save user preferences to database."""
+        if not self._async_supabase_client:
+            return False
+
+        try:
+            # Convert preferences to database format
+            prefs_data = {
+                'user_id': user_id,
+
+                # Subject preferences (vote counts)
+                'subject_length_short': preferences.subject_length_votes.get('short', 0),
+                'subject_length_medium': preferences.subject_length_votes.get('medium', 0),
+                'subject_length_long': preferences.subject_length_votes.get('long', 0),
+                'subject_use_questions': 1 if preferences.prefers_questions_in_subject is True else
+                                        -1 if preferences.prefers_questions_in_subject is False else 0,
+                'subject_personalization_level': 1 if preferences.prefers_personalized_subject is True else
+                                                 -1 if preferences.prefers_personalized_subject is False else 0,
+
+                # Body preferences (vote counts)
+                'body_length_brief': preferences.body_length_votes.get('short', 0),
+                'body_length_medium': preferences.body_length_votes.get('medium', 0),
+                'body_length_long': preferences.body_length_votes.get('long', 0),
+                'body_tone_casual': preferences.tone_votes.get('casual', 0),
+                'body_tone_professional': preferences.tone_votes.get('professional', 0),
+                'body_tone_formal': preferences.tone_votes.get('formal', 0),
+                'body_personalization_level': {'low': -1, 'medium': 0, 'high': 1}.get(
+                    preferences.preferred_personalization_level, 0
+                ),
+                'body_use_bullets': 1 if preferences.prefers_bullet_points is True else
+                                   -1 if preferences.prefers_bullet_points is False else 0,
+                'body_simple_language': 1 if preferences.prefers_simple_language is True else
+                                       -1 if preferences.prefers_simple_language is False else 0,
+
+                # CTA preferences (vote counts)
+                'cta_strength_soft': preferences.cta_strength_votes.get('soft', 0),
+                'cta_strength_medium': preferences.cta_strength_votes.get('medium', 0),
+                'cta_strength_strong': preferences.cta_strength_votes.get('strong', 0),
+
+                # Metadata
+                'confidence_score': preferences.confidence,
+                'total_edits_analyzed': preferences.samples_analyzed,
+                'updated_at': datetime.utcnow().isoformat(),
+            }
+
+            # Upsert to database (insert or update)
+            await self._async_supabase_client.request(
+                'user_preferences',
+                'POST',
+                prefs_data,
+                upsert=True,
+                on_conflict='user_id'
+            )
+
+            return True
+        except Exception as e:
+            print(f"[FeedbackLoop] Error saving preferences to DB: {e}")
+            return False
+
+    async def _load_preferences_from_db(self, user_id: str) -> Optional[UserPreferences]:
+        """Load user preferences from database."""
+        if not self._async_supabase_client:
+            return None
+
+        try:
+            result = await self._async_supabase_client.request(
+                f"user_preferences?user_id=eq.{user_id}&select=*",
+                'GET'
+            )
+
+            if not result or len(result) == 0:
+                return None
+
+            row = result[0]
+
+            # Convert database row to UserPreferences object
+            prefs = UserPreferences(user_id=user_id)
+
+            # Subject votes
+            prefs.subject_length_votes = {
+                'short': row.get('subject_length_short', 0),
+                'medium': row.get('subject_length_medium', 0),
+                'long': row.get('subject_length_long', 0),
+            }
+
+            # Body votes
+            prefs.body_length_votes = {
+                'short': row.get('body_length_brief', 0),
+                'medium': row.get('body_length_medium', 0),
+                'long': row.get('body_length_long', 0),
+            }
+
+            prefs.tone_votes = {
+                'casual': row.get('body_tone_casual', 0),
+                'professional': row.get('body_tone_professional', 0),
+                'formal': row.get('body_tone_formal', 0),
+            }
+
+            # CTA votes
+            prefs.cta_strength_votes = {
+                'soft': row.get('cta_strength_soft', 0),
+                'medium': row.get('cta_strength_medium', 0),
+                'strong': row.get('cta_strength_strong', 0),
+            }
+
+            # Boolean preferences
+            subject_questions = row.get('subject_use_questions', 0)
+            prefs.prefers_questions_in_subject = True if subject_questions > 0 else False if subject_questions < 0 else None
+
+            subject_personalization = row.get('subject_personalization_level', 0)
+            prefs.prefers_personalized_subject = True if subject_personalization > 0 else False if subject_personalization < 0 else None
+
+            bullets = row.get('body_use_bullets', 0)
+            prefs.prefers_bullet_points = True if bullets > 0 else False if bullets < 0 else None
+
+            simple_lang = row.get('body_simple_language', 0)
+            prefs.prefers_simple_language = True if simple_lang > 0 else False if simple_lang < 0 else None
+
+            # Personalization level
+            personalization_level = row.get('body_personalization_level', 0)
+            if personalization_level > 0:
+                prefs.preferred_personalization_level = 'high'
+            elif personalization_level < 0:
+                prefs.preferred_personalization_level = 'low'
+            else:
+                prefs.preferred_personalization_level = 'medium'
+
+            # Metadata
+            prefs.confidence = row.get('confidence_score', 0.0)
+            prefs.samples_analyzed = row.get('total_edits_analyzed', 0)
+
+            # Derive final preferences from votes
+            self._derive_preferences(prefs)
+
+            return prefs
+
+        except Exception as e:
+            print(f"[FeedbackLoop] Error loading preferences from DB: {e}")
+            return None
+
+    async def _save_edit_to_db(
+        self,
+        template_id: str,
+        user_id: str,
+        campaign_id: str,
+        original_subject: str,
+        original_body: str,
+        edited_subject: str,
+        edited_body: str,
+        analysis: EditAnalysis
+    ) -> bool:
+        """Save full edit history to database."""
+        if not self._async_supabase_client:
+            return False
+
+        try:
+            # Convert EditAnalysis to JSON
+            analysis_dict = self._analysis_to_dict(analysis)
+
+            edit_data = {
+                'template_id': template_id,
+                'user_id': user_id,
+                'campaign_id': campaign_id,
+                'original_subject': original_subject,
+                'original_body': original_body,
+                'edited_subject': edited_subject,
+                'edited_body': edited_body,
+                'edit_analysis': json.dumps(analysis_dict),
+            }
+
+            await self._async_supabase_client.request(
+                'template_edits',
+                'POST',
+                edit_data
+            )
+
+            return True
+        except Exception as e:
+            print(f"[FeedbackLoop] Error saving edit to DB: {e}")
+            return False
+
+    async def initialize_from_db(self) -> int:
+        """
+        Load all user preferences from database on service startup.
+        Returns the number of user preferences loaded.
+        """
+        if not self._async_supabase_client:
+            print("[FeedbackLoop] No async client available, skipping DB initialization")
+            return 0
+
+        try:
+            # Load all user preferences
+            result = await self._async_supabase_client.request(
+                "user_preferences?select=*",
+                'GET'
+            )
+
+            if not result:
+                print("[FeedbackLoop] No user preferences found in database")
+                return 0
+
+            count = 0
+            for row in result:
+                user_id = row.get('user_id')
+                if user_id:
+                    prefs = await self._load_preferences_from_db(user_id)
+                    if prefs:
+                        self._user_preferences[user_id] = prefs
+                        count += 1
+
+            print(f"[FeedbackLoop] Loaded {count} user preferences from database")
+            return count
+
+        except Exception as e:
+            print(f"[FeedbackLoop] Error initializing from DB: {e}")
+            return 0
+
+    # =========================================================================
     # PROMPT ENHANCEMENT
     # =========================================================================
 
@@ -617,9 +856,12 @@ class FeedbackLoopService:
 _feedback_service: Optional[FeedbackLoopService] = None
 
 
-def get_feedback_service() -> FeedbackLoopService:
+def get_feedback_service(async_supabase_client=None) -> FeedbackLoopService:
     """Get the global feedback service instance."""
     global _feedback_service
     if _feedback_service is None:
-        _feedback_service = FeedbackLoopService()
+        _feedback_service = FeedbackLoopService(async_supabase_client)
+    elif async_supabase_client and not _feedback_service._async_supabase_client:
+        # Update the client if it wasn't set initially
+        _feedback_service._async_supabase_client = async_supabase_client
     return _feedback_service

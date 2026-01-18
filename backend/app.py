@@ -111,6 +111,11 @@ async def lifespan(app: FastAPI):
     async_supabase_client = AsyncSupabaseClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     # Initialize analytics
     init_analytics()
+
+    # Initialize feedback service with database persistence
+    feedback_service = get_feedback_service(async_supabase_client)
+    await feedback_service.initialize_from_db()
+
     yield
     # Shutdown analytics
     await shutdown_analytics()
@@ -278,13 +283,18 @@ def create_campaign_if_new(user_id: str, campaign_id: str, metadata: dict = None
     if not campaign_id:
         raise HTTPException(status_code=400, detail="campaign_id is required")
 
+    print(f"[Campaign] Checking if campaign exists: {campaign_id} for user {user_id}")
+
     # Check if campaign already exists
     existing_campaign = supabase_request(
         f"campaigns?id=eq.{campaign_id}&select=id",
         'GET'
     )
     if existing_campaign and len(existing_campaign) > 0:
+        print(f"[Campaign] Campaign {campaign_id} already exists")
         return campaign_id  # Campaign exists, use it
+
+    print(f"[Campaign] Campaign not found, creating new one...")
 
     # Get the next campaign number for this user
     existing = supabase_request(
@@ -305,10 +315,18 @@ def create_campaign_if_new(user_id: str, campaign_id: str, metadata: dict = None
         'avg_similarity': None,
     }
 
-    result = supabase_request('campaigns', 'POST', campaign_data)
-    if result and len(result) > 0:
-        print(f"[Campaign] Created new campaign {campaign_id}")
-        return campaign_id
+    print(f"[Campaign] Creating campaign with data: {campaign_data}")
+
+    try:
+        result = supabase_request('campaigns', 'POST', campaign_data)
+        if result and len(result) > 0:
+            print(f"[Campaign] Created new campaign {campaign_id}")
+            return campaign_id
+        else:
+            print(f"[Campaign] No result from insert, result: {result}")
+    except Exception as e:
+        print(f"[Campaign] Error creating campaign: {e}")
+        raise
 
     raise HTTPException(status_code=500, detail="Failed to create campaign")
 
@@ -773,6 +791,32 @@ async def get_user_campaigns(user_id: str):
     return {"campaigns": result or [], "count": len(result) if result else 0}
 
 
+class CreateCampaignRequest(BaseModel):
+    user_id: str
+    campaign_id: str
+    representative_subject: str = "New Campaign"
+
+
+@app.post("/campaigns/create")
+async def create_campaign(request: CreateCampaignRequest):
+    """
+    Create a new campaign in the database.
+    Called before parallel lead/template/cadence generation to avoid race conditions.
+    """
+    print(f"[Campaign] Creating campaign {request.campaign_id} for user {request.user_id}")
+
+    try:
+        campaign_id = create_campaign_if_new(
+            request.user_id,
+            request.campaign_id,
+            metadata={'representative_subject': request.representative_subject}
+        )
+        return {"success": True, "campaign_id": campaign_id}
+    except Exception as e:
+        print(f"[Campaign] Error creating campaign: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/campaigns/analyze")
 async def analyze_user_campaigns(request: ClusterRequest):
     """
@@ -1209,9 +1253,11 @@ async def record_template_edit(request: RecordEditRequest):
     - Personalization preference
     - Bullet point preference
     - Simple language preference
+
+    Also saves full edit history to database for analytics.
     """
-    feedback_service = get_feedback_service()
-    result = feedback_service.record_template_edited(
+    feedback_service = get_feedback_service(async_supabase_client)
+    result = await feedback_service.record_template_edited(
         template_id=request.template_id,
         new_subject=request.new_subject,
         new_body=request.new_body,

@@ -34,6 +34,7 @@ let currentUserId = null;
 let selectedCampaign = null; // Currently selected campaign for detail view
 let currentLeads = []; // Leads for the current campaign
 let currentTemplate = { subject: '', body: '' }; // Current email template
+let originalTemplate = { subject: '', body: '' }; // Original template before user edits (for tracking changes)
 let clusteringAnimationInterval = null;
 let currentCampaignsPage = 1; // Current page for campaigns pagination
 const CAMPAIGNS_PER_PAGE = 6; // 3x2 grid
@@ -3422,6 +3423,27 @@ async function handleContinueCampaign() {
     return;
   }
 
+  // Create campaign in database FIRST (before parallel operations) to avoid race conditions
+  try {
+    const createResponse = await fetch(`${CONFIG?.API_URL || 'http://localhost:8000'}/campaigns/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: status.userId,
+        campaign_id: selectedCampaign.id,
+        representative_subject: selectedCampaign.representative_subject || 'New Campaign'
+      })
+    });
+    if (!createResponse.ok) {
+      const error = await createResponse.text();
+      console.error('[Hypatia] Failed to create campaign:', error);
+    } else {
+      console.log('[Hypatia] Campaign created in database:', selectedCampaign.id);
+    }
+  } catch (e) {
+    console.error('[Hypatia] Error creating campaign:', e);
+  }
+
   // Trigger all three API calls in parallel
   const leadsPromise = triggerLeadsGeneration(status.userId);
   const templatePromise = triggerTemplateGeneration(status.userId);
@@ -3688,6 +3710,11 @@ async function triggerTemplateGeneration(userId) {
     if (response.success && response.template) {
       currentTemplate.subject = response.template.subject || '';
       currentTemplate.body = response.template.body || '';
+
+      // Store original template for edit tracking
+      originalTemplate.subject = currentTemplate.subject;
+      originalTemplate.body = currentTemplate.body;
+
       parallelGenerationState.templateResult = response;
       // Store template_id for edit tracking
       if (response.template_id && selectedCampaign) {
@@ -4478,6 +4505,10 @@ async function handleRegenerateTemplate() {
       // Update currentTemplate state
       currentTemplate.subject = response.template.subject || '';
       currentTemplate.body = response.template.body || '';
+
+      // Store original template for edit tracking
+      originalTemplate.subject = currentTemplate.subject;
+      originalTemplate.body = currentTemplate.body;
 
       // Track template generated
       if (window.HypatiaAnalytics) {
