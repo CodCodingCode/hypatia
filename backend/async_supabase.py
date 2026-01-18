@@ -197,9 +197,11 @@ async def save_generated_leads(
             try:
                 # Use upsert to handle duplicates gracefully
                 await client.request(
-                    'generated_leads?on_conflict=user_id,email,campaign_id',
+                    'generated_leads',
                     'POST',
-                    lead_data
+                    lead_data,
+                    upsert=True,
+                    on_conflict='user_id,email,campaign_id'
                 )
                 return True
             except Exception as e:
@@ -230,7 +232,8 @@ async def save_generated_template(
 ) -> Dict[str, Any]:
     """
     Save AI-generated email template to Supabase.
-    Uses upsert to handle one template per campaign atomically.
+
+    Uses check-then-update/insert pattern for reliability (one template per campaign).
     """
     template_data = {
         'user_id': user_id,
@@ -243,17 +246,37 @@ async def save_generated_template(
     }
 
     try:
-        result = await client.request(
-            'generated_templates',
-            'POST',
-            template_data,
-            upsert=True,
-            on_conflict='campaign_id'
+        # Check if template already exists for this campaign
+        existing = await client.request(
+            f"generated_templates?campaign_id=eq.{campaign_id}&select=id",
+            'GET'
         )
-        return {
-            'template_saved': True,
-            'template_id': result[0]['id'] if result else None,
-        }
+
+        if existing and len(existing) > 0:
+            # Update existing template
+            template_id = existing[0]['id']
+            result = await client.request(
+                f"generated_templates?id=eq.{template_id}",
+                'PATCH',
+                template_data
+            )
+            return {
+                'template_saved': True,
+                'template_id': template_id,
+                'action': 'updated'
+            }
+        else:
+            # Insert new template
+            result = await client.request(
+                'generated_templates',
+                'POST',
+                template_data
+            )
+            return {
+                'template_saved': True,
+                'template_id': result[0]['id'] if result else None,
+                'action': 'inserted'
+            }
     except Exception as e:
         print(f"Error saving template for campaign {campaign_id}: {e}")
         return {'template_saved': False, 'error': str(e)}

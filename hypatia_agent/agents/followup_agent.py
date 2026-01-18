@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from ..base_agent import BaseAgent
 from ..services.llm_client import LLMClient
 from ..services.supabase_client import SupabaseClient
+from .fact_extractor import FactExtractorAgent
 
 
 class FollowupAgent(BaseAgent):
@@ -20,6 +21,7 @@ class FollowupAgent(BaseAgent):
     def __init__(self, supabase_client: SupabaseClient = None):
         self.supabase = supabase_client or SupabaseClient()
         self.llm = LLMClient()
+        self.fact_extractor = FactExtractorAgent(self.llm)  # For grounded generation
 
     async def execute(self, *args, **kwargs):
         return await self.plan(
@@ -291,7 +293,7 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
         timing: dict = None,
     ) -> list:
         """
-        Generate a complete 4-email cadence (initial + 3 follow-ups).
+        Generate a complete 4-email cadence (initial + 3 follow-ups) with fact-grounded content.
 
         Args:
             user_id: User ID for context
@@ -306,6 +308,15 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
         """
         timing = timing or {'initial': 1, 'followup_1': 3, 'followup_2': 7, 'followup_3': 14}
         sample_emails = sample_emails or []
+
+        # FACT EXTRACTION: Extract verifiable facts from sample emails first
+        print("[CadenceGen] Step 1: Extracting facts from sample emails...")
+        extracted_facts = await self.fact_extractor.extract_facts(
+            sample_emails=sample_emails,
+            cta=""  # Will be determined from samples
+        )
+        grounded_facts = extracted_facts.to_grounding_prompt()
+        print(f"[CadenceGen] Extracted {len(extracted_facts.value_propositions)} value props, {len(extracted_facts.specific_claims)} claims")
 
         # Get campaign data for context
         campaign = {}
@@ -346,6 +357,7 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
                 style_prompt=style_prompt,
                 sample_emails=sample_emails,
                 campaign=campaign,
+                grounded_facts=grounded_facts,  # Pass grounded facts
             )
 
             cadence.append({
@@ -365,29 +377,37 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
         style_prompt: str,
         sample_emails: list,
         campaign: dict,
+        grounded_facts: str = "",  # NEW: Grounded facts for hallucination prevention
     ) -> dict:
-        """Generate a single email for the cadence."""
+        """Generate a single email for the cadence using only grounded facts."""
 
         is_initial = email_type == 'initial'
 
-        # Build context from sample emails
+        # Build context from sample emails (for style reference only)
         email_context = ""
         if sample_emails:
-            email_context = "\n\nSAMPLE EMAILS FROM THIS CAMPAIGN (match this style):\n"
+            email_context = "\n\nSAMPLE EMAILS (for style reference - do NOT copy content):\n"
             for i, email in enumerate(sample_emails[:2], 1):
                 subject = email.get('subject', '')
                 body = email.get('body', email.get('snippet', ''))[:300]
                 email_context += f"\n--- Sample {i} ---\nSubject: {subject}\nBody: {body}\n"
 
-        system_prompt = f"""You write {'initial outreach' if is_initial else 'follow-up'} emails.
+        system_prompt = f"""You write {'initial outreach' if is_initial else 'follow-up'} emails using ONLY the allowed facts below.
 
-CRITICAL RULES:
+CRITICAL GROUNDING RULES (MOST IMPORTANT):
+- Use ONLY the facts provided in the ALLOWED FACTS section below
+- Use ONLY {{{{first_name}}}} and {{{{last_name}}}} as placeholders - NO other placeholders like {{{{company}}}} or {{{{title}}}}
+- NEVER fabricate information (no fake articles, research, statistics, names, etc.)
+- NEVER add details that aren't in the allowed facts
+- If information seems missing, work with what you have - do NOT invent anything
+
+{grounded_facts if grounded_facts else ""}
+
+STYLE RULES:
 - Keep emails SHORT (2-4 sentences for follow-ups, 4-6 for initial)
 - Be professional but personable
-- Use placeholders: {{{{first_name}}}}, {{{{company}}}}, {{{{title}}}}
 - {"Subject should be attention-grabbing but not clickbait" if is_initial else "Subject MUST start with 'Re: ' to indicate follow-up"}
 - Sign off with just "Best" - no name needed
-- NEVER fabricate information (no fake articles, research, news)
 
 {f"STYLE GUIDANCE: {style_prompt}" if style_prompt else ""}
 {email_context}"""
@@ -395,11 +415,13 @@ CRITICAL RULES:
         contact_desc = campaign.get('contact_description', 'Professional contacts')
         rep_subject = campaign.get('representative_subject', '')
 
-        user_prompt = f"""Write a {email_type.replace('_', ' ')} email.
+        user_prompt = f"""Write a {email_type.replace('_', ' ')} email using ONLY the allowed facts.
 
 Tone: {tone_guidance}
 Target audience: {contact_desc}
 {f"Original campaign subject for reference: {rep_subject}" if rep_subject and not is_initial else ""}
+
+REMEMBER: Use ONLY {{first_name}} and {{last_name}} as placeholders. Do NOT add any information not in the ALLOWED FACTS.
 
 Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown, no code blocks."""
 
@@ -414,23 +436,23 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
             return self._get_fallback_cadence_email(email_type)
 
     def _get_fallback_cadence_email(self, email_type: str) -> dict:
-        """Fallback templates if LLM fails."""
+        """Fallback templates if LLM fails. Only uses {first_name} and {last_name} placeholders."""
         templates = {
             'initial': {
-                'subject': 'Quick question, {{first_name}}',
-                'body': 'Hi {{first_name}},\n\nI wanted to reach out regarding a potential opportunity that might be relevant for {{company}}.\n\nWould you be open to a quick conversation?\n\nBest',
+                'subject': 'Quick question, {first_name}',
+                'body': 'Hi {first_name},\n\nI wanted to reach out regarding a potential opportunity.\n\nWould you be open to a quick conversation?\n\nBest',
             },
             'followup_1': {
                 'subject': 'Re: Quick question',
-                'body': 'Hi {{first_name}},\n\nJust wanted to bump this up - did you get a chance to see my previous email?\n\nBest',
+                'body': 'Hi {first_name},\n\nJust wanted to bump this up - did you get a chance to see my previous email?\n\nBest',
             },
             'followup_2': {
                 'subject': 'Re: Quick question',
-                'body': 'Hi {{first_name}},\n\nFollowing up one more time. Let me know if you have any questions.\n\nBest',
+                'body': 'Hi {first_name},\n\nFollowing up one more time. Let me know if you have any questions.\n\nBest',
             },
             'followup_3': {
                 'subject': 'Re: Quick question',
-                'body': 'Hi {{first_name}},\n\nCircling back one last time. No worries if the timing is not right - feel free to reach out whenever it makes sense.\n\nBest',
+                'body': 'Hi {first_name},\n\nCircling back one last time. No worries if the timing is not right - feel free to reach out whenever it makes sense.\n\nBest',
             },
         }
         return templates.get(email_type, templates['initial'])

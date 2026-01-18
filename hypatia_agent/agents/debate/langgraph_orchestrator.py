@@ -27,6 +27,8 @@ import operator
 from langgraph.graph import StateGraph, END
 
 from ...services.llm_client import LLMClient
+from ...models.email_facts import ExtractedEmailFacts
+from ..fact_extractor import FactExtractorAgent
 from .style_agent import StyleDebateAgent
 from .cta_agent import CTADebateAgent
 from .best_practice_agent import BestPracticeDebateAgent
@@ -84,6 +86,9 @@ class DebateState(TypedDict):
     style_prompt: str
     sample_emails: list
 
+    # Grounded facts for preventing hallucination
+    grounded_facts: str
+
     # Round tracking
     current_round: int
     max_rounds: int
@@ -114,6 +119,7 @@ class LangGraphDebateOrchestrator:
 
     def __init__(self, llm_client: LLMClient = None, custom_practices: str = None):
         self.llm = llm_client or LLMClient()
+        self.fact_extractor = FactExtractorAgent(self.llm)  # For grounded generation
         self.style_agent = StyleDebateAgent(self.llm)
         self.cta_agent = CTADebateAgent(self.llm)
         self.best_practice_agent = BestPracticeDebateAgent(self.llm, custom_practices)
@@ -176,15 +182,16 @@ class LangGraphDebateOrchestrator:
         ).to_dict()
 
     async def _node_draft_initial(self, state: DebateState) -> dict:
-        """StyleAgent creates initial draft."""
+        """StyleAgent creates initial draft using grounded facts."""
         if state.get("verbose"):
-            print("  [LangGraph] Node: draft_initial - StyleAgent drafting...")
+            print("  [LangGraph] Node: draft_initial - StyleAgent drafting with grounded facts...")
 
         draft = await self.style_agent.respond({
             "mode": "draft",
             "cta": state["cta"],
             "style_prompt": state["style_prompt"],
             "sample_emails": state["sample_emails"],
+            "grounded_facts": state["grounded_facts"],  # Pass grounded facts
         })
 
         log_entry = self._log_message(
@@ -234,7 +241,7 @@ class LangGraphDebateOrchestrator:
         }
 
     async def _node_revise_for_cta(self, state: DebateState) -> dict:
-        """StyleAgent revises based on CTA feedback."""
+        """StyleAgent revises based on CTA feedback, maintaining grounding."""
         if state.get("verbose"):
             print(f"  [LangGraph] Node: revise_for_cta - StyleAgent revising...")
 
@@ -243,6 +250,7 @@ class LangGraphDebateOrchestrator:
             "draft": state["draft"],
             "feedback": state["cta_feedback"],
             "style_prompt": state["style_prompt"],
+            "grounded_facts": state["grounded_facts"],  # Maintain grounding during revision
         })
 
         log_entry = self._log_message(
@@ -293,7 +301,7 @@ class LangGraphDebateOrchestrator:
         }
 
     async def _node_revise_for_bp(self, state: DebateState) -> dict:
-        """StyleAgent revises based on best practice feedback."""
+        """StyleAgent revises based on best practice feedback, maintaining grounding."""
         if state.get("verbose"):
             print(f"  [LangGraph] Node: revise_for_bp - StyleAgent revising...")
 
@@ -302,6 +310,7 @@ class LangGraphDebateOrchestrator:
             "draft": state["draft"],
             "feedback": state["bp_feedback"],
             "style_prompt": state["style_prompt"],
+            "grounded_facts": state["grounded_facts"],  # Maintain grounding during revision
         })
 
         # Determine next recipient based on whether we continue
@@ -408,7 +417,7 @@ class LangGraphDebateOrchestrator:
         verbose: bool = True,
     ) -> tuple[EmailTemplate, list[dict]]:
         """
-        Run the debate to create an email template.
+        Run the debate to create an email template with fact-grounded generation.
 
         Args:
             cta: What we want the recipient to do
@@ -421,7 +430,18 @@ class LangGraphDebateOrchestrator:
             Tuple of (EmailTemplate, communication_log)
         """
         if verbose:
-            print("  [LangGraph] Starting email template debate...")
+            print("  [LangGraph] Step 1: Extracting facts from sample emails...")
+
+        # FACT EXTRACTION: Extract verifiable facts from sample emails first
+        extracted_facts = await self.fact_extractor.extract_facts(
+            sample_emails=sample_emails or [],
+            cta=cta
+        )
+        grounded_facts = extracted_facts.to_grounding_prompt()
+
+        if verbose:
+            print(f"  [LangGraph] Extracted facts: {len(extracted_facts.value_propositions)} value props, {len(extracted_facts.specific_claims)} claims")
+            print("  [LangGraph] Step 2: Starting grounded email template debate...")
             print(f"  [LangGraph] Max rounds: {max_rounds}")
 
         initial_state: DebateState = {
@@ -429,6 +449,7 @@ class LangGraphDebateOrchestrator:
             "cta": cta,
             "style_prompt": style_prompt,
             "sample_emails": sample_emails or [],
+            "grounded_facts": grounded_facts,  # Pass extracted facts to state
             "current_round": 0,
             "max_rounds": max_rounds,
             "cta_feedback": "",

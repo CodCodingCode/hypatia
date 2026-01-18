@@ -1939,18 +1939,53 @@
 }
 
 /* =============================================================================
-   LEADS SCREEN - FULL PAGE LAYOUT
+   LEADS SCREEN - TWO COLUMN LAYOUT
    ============================================================================= */
 
 .hypatia-panel-content.hypatia-fullwidth .hypatia-leads-screen {
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-width: 800px;
+  max-width: 1200px;
   width: 100%;
   margin: 0 auto;
   padding: 0;
   overflow: hidden;
+}
+
+/* Two column layout container */
+.hypatia-leads-layout {
+  display: flex;
+  gap: 24px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Left column - query + manual additions */
+.hypatia-leads-left {
+  flex: 0.9;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Right column - current contacts */
+.hypatia-leads-right {
+  flex: 1.1;
+  min-width: 360px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hypatia-leads-card {
+  background: #fff;
+  border: 1px solid #e8eaed;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 /* Back button header - shared across screens */
@@ -1985,11 +2020,19 @@
   stroke: currentColor;
 }
 
-/* Hero section */
+/* Hero section - right column */
 .hypatia-leads-hero {
-  text-align: center;
-  margin-bottom: 32px;
+  text-align: left;
+  margin-bottom: 24px;
   flex-shrink: 0;
+}
+
+.hypatia-leads-right .hypatia-page-title {
+  font-size: 22px;
+}
+
+.hypatia-leads-right .hypatia-page-subtitle {
+  font-size: 13px;
 }
 
 .hypatia-page-badge {
@@ -2024,14 +2067,18 @@
   color: #202124;
 }
 
-/* Input section */
+/* Input section - right column */
 .hypatia-leads-input-section {
   background: #ffffff;
   border: 1px solid #e8eaed;
   border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 20px;
+  padding: 20px;
+  margin-bottom: 16px;
   flex-shrink: 0;
+}
+
+.hypatia-leads-right .hypatia-leads-input-section {
+  padding: 16px;
 }
 
 .hypatia-input-label {
@@ -2136,10 +2183,14 @@
   margin: 8px 0 0 0;
 }
 
-/* Quick suggestions */
+/* Quick suggestions - right column */
 .hypatia-leads-suggestions {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   flex-shrink: 0;
+}
+
+.hypatia-leads-right .hypatia-leads-suggestions {
+  margin-bottom: 0;
 }
 
 .hypatia-suggestions-label {
@@ -2176,7 +2227,74 @@
   color: #4285f4;
 }
 
-/* Leads section */
+/* Manual Lead Entry Section */
+.hypatia-manual-entry-section {
+  background: #ffffff;
+  border: 1px solid #e8eaed;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.hypatia-manual-entry-section .hypatia-section-label {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #5f6368;
+  margin-bottom: 10px;
+}
+
+.hypatia-manual-input-row {
+  display: flex;
+  gap: 10px;
+}
+
+.hypatia-manual-email-input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hypatia-manual-email-input:focus {
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+}
+
+.hypatia-manual-email-input::placeholder {
+  color: #9aa0a6;
+}
+
+.hypatia-manual-email-input.hypatia-input-error {
+  border-color: #ea4335;
+  box-shadow: 0 0 0 2px rgba(234, 67, 53, 0.1);
+  animation: shake 0.3s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* Manual Lead Badge */
+.hypatia-lead-badge-manual {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #5f6368;
+  background: #f1f3f4;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Leads section - left column */
 .hypatia-leads-section {
   flex: 1;
   display: flex;
@@ -2186,7 +2304,10 @@
   border: 1px solid #e8eaed;
   border-radius: 12px;
   overflow: hidden;
-  margin-bottom: 0;
+}
+
+.hypatia-leads-left .hypatia-leads-section {
+  height: 100%;
 }
 
 .hypatia-leads-header {
@@ -2240,14 +2361,19 @@
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+  background: #fff;
+  border-top: 1px solid #e8eaed;
+  max-height: 420px;
+  min-height: 200px;
 }
 
 .hypatia-lead-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 12px 20px;
   transition: background 0.15s ease;
+  border-bottom: 1px solid #f1f3f4;
 }
 
 .hypatia-lead-row:hover {
@@ -2283,6 +2409,9 @@
 .hypatia-lead-info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .hypatia-lead-name {
@@ -2293,9 +2422,7 @@
   font-size: 14px;
   font-weight: 500;
   color: #202124;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .hypatia-lead-linkedin {
@@ -2310,19 +2437,32 @@
   opacity: 0.7;
 }
 
+.hypatia-lead-detail {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 13px;
+  color: #3c4043;
+  white-space: normal;
+  margin-bottom: 2px;
+}
+
+.hypatia-lead-title-inline {
+  font-weight: 500;
+}
+
+.hypatia-lead-separator {
+  color: #80868b;
+  margin: 0 4px;
+}
+
+.hypatia-lead-company-inline {
+  color: #5f6368;
+}
+
 .hypatia-lead-email {
   font-family: Roboto, Arial, sans-serif;
   font-size: 12px;
   color: #5f6368;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hypatia-lead-meta {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
+  white-space: normal;
 }
 
 .hypatia-lead-title,
@@ -2388,13 +2528,14 @@
   margin: 0;
 }
 
-/* Footer */
+/* Footer - inside leads section */
 .hypatia-leads-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 0;
-  margin-top: auto;
+  padding: 16px 20px;
+  border-top: 1px solid #e8eaed;
+  background: #f8f9fa;
   flex-shrink: 0;
 }
 
@@ -3689,4 +3830,37 @@
   margin-top: 8px;
   max-height: 300px;
   overflow-y: auto;
+}
+
+/* =============================================================================
+   CONTACT PREFERENCE CATEGORY CHIPS (Groq Analysis)
+   ============================================================================= */
+
+.hypatia-contact-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  min-height: 28px;
+}
+
+.hypatia-category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: #f1f3f4;
+  border: 1px solid #e8eaed;
+  border-radius: 14px;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 11px;
+  color: #80868b;
+  transition: all 0.2s ease;
+}
+
+.hypatia-category-chip.hypatia-category-active {
+  background: #e8f0fe;
+  border-color: #4285f4;
+  color: #1a73e8;
+  font-weight: 500;
 }

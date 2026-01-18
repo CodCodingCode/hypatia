@@ -371,10 +371,19 @@ GOOGLE_CLOUD_PROJECT=your-project-id
 
 ## Running the Project
 
+### Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+**Required packages:**
+- `fastapi`, `uvicorn`, `pydantic`, `aiohttp` - Backend API
+- `langgraph>=0.2.0`, `langchain-core>=0.3.0` - Multi-agent orchestration
+- `google-auth-oauthlib`, `google-api-python-client` - Gmail integration
+
 ### Backend
 ```bash
 cd backend
-pip install -r requirements.txt
 uvicorn app:app --reload --port 8000
 ```
 
@@ -387,8 +396,44 @@ python -m backend.workers.followup_scheduler --interval 60
 python -m backend.workers.reply_detector --project $PROJECT_ID --subscription $SUB_NAME
 ```
 
+### Test LangGraph Agents
+```bash
+# Run the LangGraph manager demo
+python -m hypatia_agent.langgraph_manager
+```
+
 ### Extension
 1. Open Chrome → `chrome://extensions/`
 2. Enable Developer Mode
 3. Load unpacked → select `/extension` folder
 4. Navigate to Gmail
+
+---
+
+## Hackathon Prize Track Alignment
+
+### Foresters Financial - Multi-Agent Mind (Primary Target)
+
+**Requirements Met:**
+- 6+ specialized agents with clear roles
+- LangGraph orchestration framework
+- State management via TypedDict
+- Communication log showing agent handoffs
+- Conditional routing (Aviato → Clado fallback)
+
+**Agents:**
+1. `DataLoaderAgent` - Loads campaign data from Supabase
+2. `PeopleFinderAgent` - Finds contacts via Aviato/Clado APIs
+3. `WriterAgent` - Personalizes emails for each contact
+4. `StyleDebateAgent` - Drafts and revises templates
+5. `CTADebateAgent` - Critiques call-to-action effectiveness
+6. `BestPracticeAgent` - Checks cold email best practices
+7. `FollowupAgent` - Creates follow-up sequences
+8. `OutputGenerator` - Writes final output files
+
+### Amplitude - Behavioral Data + AI (Secondary Target)
+
+**Data → Insights → Action loop:**
+1. **Data:** Tracks 200 sent emails per user
+2. **Insights:** AI clusters into campaigns, analyzes style/CTA
+3. **Action:** Generates personalized templates, cancels follow-ups on reply

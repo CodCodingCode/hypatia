@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Hypatia - Email Intelligence",
+  "version": "1.0.0",
+  "description": "Hypatia learns your communication style to help you write better emails",
+
+  "permissions": [
+    "identity",
+    "storage",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "https://mail.google.com/*",
+    "https://www.googleapis.com/*",
+    "https://tvwghwfqscbikvwvujcy.supabase.co/*",
+    "http://localhost:8000/*"
+  ],
+
+  "oauth2": {
+    "client_id": "544423830425-k8c56m9jrbpfs4a5567b30bq8or52igj.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/gmail.compose",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://mail.google.com/*"],
+      "js": ["analytics.js", "onboarding.js", "content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

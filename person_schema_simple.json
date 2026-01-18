@@ -1,0 +1,702 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Person",
+  "description": "Safe fields for Aviato DSL queries. Scalar array fields that cause timeouts/500s when combined with other filters have been removed.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "#": "Unique identifier for the pvscode-webview://0afdhe7qj6ertprv9i0gmffhpsvdmvt0ek9nd5288eb2t7u48o8g/backend/parameter_operations.pyerson"
+    },
+    "fullName": {
+      "type": "string",
+      "#": "Person's full name"
+    },
+    "headline": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Professional headline or tagline containing job title and company"
+    },
+    "location": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Full location string (e.g. 'San Francisco, California, USA')."
+    },
+    "country": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Country of residence (e.g. 'United States', 'USA', 'UK', 'Canada')"
+    },
+    "locality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "City, town, or metro area (e.g. 'San Francisco', 'NYC', 'Seattle')"
+    },
+    "region": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "State or province (e.g. 'California', 'CA', 'Texas', 'Ontario')"
+    },
+    "gender": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Gender"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "#": "List of professional skills"
+    },
+    "lastUpdated": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When this profile was last updated"
+    },
+    "linkedinConnections": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Number of LinkedIn connections"
+    },
+    "linkedinFollowers": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Number of LinkedIn followers"
+    },
+    "linkedinJoinDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When the person joined LinkedIn"
+    },
+    "linkedinLaborStatus": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "OPEN_TO_WORK",
+        "HIRING",
+        null
+      ],
+      "#": "LinkedIn job-seeking status"
+    },
+    "researchPaperCount": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Number of published research papers"
+    },
+    "computed_oneYearAtCurrentCompany": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Has been at current company for at least 1 year"
+    },
+    "computed_employeeDuringMA": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Was an employee during a merger/acquisition"
+    },
+    "computed_founderDuringMA": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Was a founder during a merger/acquisition"
+    },
+    "computed_employeeDuringIPO": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Was an employee during an IPO"
+    },
+    "computed_likelyToExplore": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Likely to be exploring new opportunities"
+    },
+    "computed_unicornEarlyEngineer": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Was an early engineer at a unicorn company"
+    },
+    "computed_employeeDuringBigMA": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Was an employee during a major M&A (>$1B)"
+    },
+    "computed_potentialToLeave": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Shows signals of potential departure"
+    },
+    "computed_topUniversity": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Attended a top-tier university"
+    },
+    "computed_bigTechAlumPublic": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Former employee of public big tech (FAANG, etc.)"
+    },
+    "computed_bigTechAlumPrivate": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Former employee of private big tech"
+    },
+    "computed_priorBackedFounder": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Previously founded a VC-backed company"
+    },
+    "computed_recentlyLeftCompany": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Recently left their previous company"
+    },
+    "computed_investmentCount": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Number of investments made (if investor)"
+    },
+    "computed_totalRaised": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "#": "Total funding raised (if founder)"
+    },
+    "languageList.languageName": {
+      "type": "string",
+      "#": "Name of language spoken"
+    },
+    "languageList.proficiency": {
+      "type": "string",
+      "enum": [
+        "ELEMENTARY",
+        "LIMITED_WORKING",
+        "PROFESSIONAL_WORKING",
+        "FULL_PROFESSIONAL",
+        "NATIVE"
+      ],
+      "#": "Proficiency level in the language"
+    },
+    "educationList.endDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When education ended"
+    },
+    "educationList.startDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When education started"
+    },
+    "educationList.name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Name of education program or degree"
+    },
+    "educationList.subject": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Subject or major studied"
+    },
+    "educationList.grade": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Grade or GPA achieved"
+    },
+    "educationList.activities": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Extracurricular activities during education"
+    },
+    "educationList.school.fullName": {
+      "type": "string",
+      "#": "Full name of the school/university"
+    },
+    "educationList.school.location": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Location of the school"
+    },
+    "educationList.school.country": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Country where school is located"
+    },
+    "educationList.school.locality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "City where school is located"
+    },
+    "educationList.school.region": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "State/province where school is located"
+    },
+    "educationList.degree.fieldOfStudy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Field of study for the degree"
+    },
+    "educationList.degree.name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Name of degree (e.g. 'Bachelor of Science')"
+    },
+    "educationList.degree.endDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When degree was completed"
+    },
+    "educationList.degree.startDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When degree was started"
+    },
+    "degreeList.fieldOfStudy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Field of study for the degree"
+    },
+    "degreeList.name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Name of degree (e.g. 'MBA', 'PhD')"
+    },
+    "degreeList.endDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When degree was completed"
+    },
+    "degreeList.startDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When degree was started"
+    },
+    "degreeList.school.fullName": {
+      "type": "string",
+      "#": "Full name of the school/university"
+    },
+    "degreeList.school.location": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Location of the school"
+    },
+    "degreeList.school.country": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Country where school is located"
+    },
+    "degreeList.school.locality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "City where school is located"
+    },
+    "degreeList.school.region": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "State/province where school is located"
+    },
+    "experienceList.endDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When employment ended (null if current)"
+    },
+    "experienceList.startDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "When employment started"
+    },
+    "experienceList.companyIsStealth": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Company is in stealth mode"
+    },
+    "get_titles(experienceList.positionList, 'current')": {
+      "type": "string",
+      "#": "Current job title, role, or position (e.g. 'Software Engineer', 'Recruiter', 'Product Manager', 'CEO'). Use this when searching for what someone does or their occupation.",
+      "api_function": true
+    },
+    "get_titles(experienceList.positionList, 'past')": {
+      "type": "string",
+      "#": "Past/previous job title, role, or position. Use when searching for former roles.",
+      "api_function": true
+    },
+    "experienceList.companyName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Company name where person works or worked (e.g. 'Meta', 'Stripe', 'OpenAI'). Use this when searching for employees of a specific company."
+    },
+    "experienceList.companyID": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Unique ID of the company in Aviato database (use for exact match)"
+    },
+    "experienceList.company.description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Company description"
+    },
+    "experienceList.company.location": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Company headquarters location"
+    },
+    "experienceList.company.tagline": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Company tagline or slogan"
+    },
+    "experienceList.company.founded": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "Date company was founded"
+    },
+    "experienceList.company.yearFounded": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Year company was founded"
+    },
+    "experienceList.company.headcount": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Number of employees"
+    },
+    "experienceList.company.isStealth": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Company is in stealth mode"
+    },
+    "experienceList.company.country": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Country where company is headquartered"
+    },
+    "experienceList.company.region": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "State/province of headquarters"
+    },
+    "experienceList.company.locality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "City of headquarters"
+    },
+    "experienceList.company.ipoDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "Date of IPO (if public)"
+    },
+    "experienceList.company.latestDealType": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Type of most recent funding deal"
+    },
+    "experienceList.company.latestDealDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "Date of most recent funding deal"
+    },
+    "experienceList.company.latestDealAmount": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "#": "Amount raised in most recent deal (USD)"
+    },
+    "experienceList.company.totalFunding": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "#": "Total funding raised to date (USD)"
+    },
+    "experienceList.company.fundingRoundCount": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Number of funding rounds completed"
+    },
+    "experienceList.company.lastRoundValuation": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "#": "Valuation at last funding round (USD)"
+    },
+    "experienceList.company.isAcquired": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Company has been acquired"
+    },
+    "experienceList.company.isExited": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Company has had an exit (IPO or acquisition)"
+    },
+    "experienceList.company.isShutDown": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Company has shut down"
+    },
+    "companiesFoundedList.company.description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Description of company founded"
+    },
+    "companiesFoundedList.company.location": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Location of company founded"
+    },
+    "companiesFoundedList.company.tagline": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Tagline of company founded"
+    },
+    "companiesFoundedList.company.founded": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "#": "Date company was founded"
+    },
+    "companiesFoundedList.company.yearFounded": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Year company was founded"
+    },
+    "companiesFoundedList.company.headcount": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "#": "Number of employees at company founded"
+    },
+    "companiesFoundedList.company.isStealth": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Founded company is in stealth"
+    },
+    "companiesFoundedList.company.isStartup": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Founded company is a startup"
+    },
+    "companiesFoundedList.company.country": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "Country of company founded"
+    },
+    "companiesFoundedList.company.region": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "State/province of company founded"
+    },
+    "companiesFoundedList.company.locality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "#": "City of company founded"
+    },
+    "companiesFoundedList.company.totalFunding": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "#": "Total funding raised by company founded (USD)"
+    },
+    "companiesFoundedList.company.isAcquired": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Founded company was acquired"
+    },
+    "companiesFoundedList.company.isExited": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Founded company had an exit"
+    },
+    "companiesFoundedList.company.isShutDown": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "#": "Founded company shut down"
+    }
+  },
+  "required": [
+    "id",
+    "fullName"
+  ]
+}

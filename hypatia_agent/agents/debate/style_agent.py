@@ -25,14 +25,20 @@ class StyleDebateAgent(BaseDebateAgent):
 
 Your job is to write cold outreach emails that sound EXACTLY like the person would write them - same tone, vocabulary, sentence structure, and personality.
 
-CRITICAL RULES:
-1. Use placeholders for personalization: {first_name}, {last_name}
-2. Keep emails SHORT (under 100 words for body)
-3. Match the style EXACTLY - if they use lowercase, you use lowercase
-4. The call-to-action should feel natural, not forced
-5. Output ONLY the email - no explanations
+CRITICAL GROUNDING RULES (MOST IMPORTANT):
+1. Use ONLY the facts provided in the ALLOWED FACTS section
+2. Use ONLY {first_name} and {last_name} as placeholders - NO other placeholders
+3. NEVER fabricate information (no fake articles, research, statistics, names, etc.)
+4. NEVER add details that aren't in the allowed facts
+5. If information seems missing, work with what you have - do NOT invent anything
 
-When revising based on feedback, incorporate the suggestions while maintaining the original style."""
+STYLE RULES:
+1. Keep emails SHORT (under 100 words for body)
+2. Match the style EXACTLY - if they use lowercase, you use lowercase
+3. The call-to-action should feel natural, not forced
+4. Output ONLY the email - no explanations
+
+When revising based on feedback, incorporate the suggestions while maintaining grounding in the allowed facts."""
 
     def _build_user_prompt(self, context: dict) -> str:
         """Build prompt for drafting or revising."""
@@ -44,12 +50,13 @@ When revising based on feedback, incorporate the suggestions while maintaining t
             return self._build_revision_prompt(context)
 
     def _build_draft_prompt(self, context: dict) -> str:
-        """Build prompt for initial draft."""
+        """Build prompt for initial draft with fact grounding."""
         style_prompt = context.get("style_prompt", "")
         sample_emails = context.get("sample_emails", [])
         cta = context.get("cta", "")
+        grounded_facts = context.get("grounded_facts", "")
 
-        # Format sample emails
+        # Format sample emails for style reference only
         samples_text = ""
         if sample_emails:
             samples_text = "\n\n---\n\n".join([
@@ -57,20 +64,20 @@ When revising based on feedback, incorporate the suggestions while maintaining t
                 for e in sample_emails[:3]
             ])
 
-        return f"""Write a cold outreach email template.
+        return f"""Write a cold outreach email template using ONLY the allowed facts below.
 
-STYLE GUIDE:
+{grounded_facts if grounded_facts else ""}
+
+STYLE GUIDE (for tone and writing style only):
 {style_prompt}
 
-SAMPLE EMAILS FROM THIS PERSON:
+SAMPLE EMAILS (for style reference - do NOT copy content, only match tone):
 {samples_text if samples_text else "(No samples provided)"}
 
-CALL-TO-ACTION (what we want the recipient to do):
+CALL-TO-ACTION:
 {cta}
 
-PLACEHOLDERS TO USE:
-- {{first_name}} - recipient's first name
-- {{last_name}} - recipient's last name
+REMEMBER: Use ONLY {{first_name}} and {{last_name}} as placeholders. Do NOT add any information not in the ALLOWED FACTS above.
 
 Write the email now. Format as:
 SUBJECT: [subject line]
@@ -78,12 +85,15 @@ BODY:
 [email body]"""
 
     def _build_revision_prompt(self, context: dict) -> str:
-        """Build prompt for revision based on feedback."""
+        """Build prompt for revision based on feedback, maintaining grounding."""
         current_draft = context.get("draft", "")
         feedback = context.get("feedback", "")
         style_prompt = context.get("style_prompt", "")
+        grounded_facts = context.get("grounded_facts", "")
 
-        return f"""Revise this email based on the feedback, while maintaining the original style.
+        return f"""Revise this email based on the feedback, while maintaining grounding in the allowed facts.
+
+{grounded_facts if grounded_facts else ""}
 
 CURRENT DRAFT:
 {current_draft}
@@ -93,6 +103,8 @@ FEEDBACK TO INCORPORATE:
 
 STYLE TO MAINTAIN:
 {style_prompt}
+
+CRITICAL: When revising, do NOT add any new information. Only use facts from the ALLOWED FACTS section above. Use ONLY {{first_name}} and {{last_name}} as placeholders.
 
 Write the revised email now. Format as:
 SUBJECT: [subject line]

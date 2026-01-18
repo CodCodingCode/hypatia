@@ -25,11 +25,12 @@ ENV_PATH = os.path.join(
 )
 load_dotenv(ENV_PATH)
 
-# Configuration
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-MODEL = "gpt-4.1-nano"
+# Configuration - Use OpenRouter with Gemini Flash
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+MODEL = "google/gemini-3-flash-preview"
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
 
 
 def extract_facts_from_description(description: str) -> List[AtomicFact]:
@@ -354,10 +355,6 @@ def generate_search_description(dsl: dict) -> str:
             parts.append(f"at {' or '.join(school)}")
         else:
             parts.append(f"at {school}")
-
-    # Get company attributes
-    if dsl.get("experienceList.company.isVCFirm"):
-        parts.append("at VC firms")
 
     # Get location
     location = dsl.get("locality") or dsl.get("region") or dsl.get("country")

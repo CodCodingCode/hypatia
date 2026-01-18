@@ -12,6 +12,7 @@ import urllib.parse
 from typing import Optional
 from difflib import SequenceMatcher
 from pathlib import Path
+from datetime import datetime
 
 # UUID validation pattern
 UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
@@ -50,7 +51,26 @@ from hypatia_agent.services.supabase_client import SupabaseClient as AgentSupaba
 from hypatia_agent.agents.followup_agent import FollowupAgent
 from hypatia_agent.agents.people_finder_agent import PeopleFinderAgent
 from hypatia_agent.agents.debate.orchestrator import DebateOrchestrator
+from hypatia_agent.agents.debate.langgraph_orchestrator import LangGraphDebateOrchestrator
 from hypatia_agent.services.llm_client import LLMClient
+
+# Analytics
+from analytics import (
+    init_analytics,
+    track_user_created,
+    track_campaign_clustering_completed,
+    track_campaign_analyzed,
+    track_lead_generation_completed,
+    track_template_generation_completed,
+    track_cadence_generated,
+    track_email_batch_sent,
+    track_followup_scheduled,
+    track_followup_cancelled,
+    shutdown_analytics,
+)
+
+# Feedback Loop - "Ever Improving" AI
+from feedback_loop import get_feedback_service
 
 
 # =============================================================================
@@ -89,7 +109,11 @@ async def lifespan(app: FastAPI):
     global async_supabase_client
     # Use service role key to bypass RLS for backend operations
     async_supabase_client = AsyncSupabaseClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    # Initialize analytics
+    init_analytics()
     yield
+    # Shutdown analytics
+    await shutdown_analytics()
     if async_supabase_client:
         await async_supabase_client.close()
 
@@ -204,6 +228,15 @@ class SendBatchRequest(BaseModel):
     emails: list[EmailToSend]
 
 
+class CreateCampaignRequest(BaseModel):
+    user_id: str
+    representative_subject: str = "New Campaign"
+    representative_recipient: str = ""
+    contact_description: Optional[str] = None
+    style_description: Optional[str] = None
+    cta_description: Optional[str] = None
+
+
 # =============================================================================
 # SUPABASE HELPERS
 # =============================================================================
@@ -235,6 +268,49 @@ def supabase_request(endpoint: str, method: str = 'GET', body=None):
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
         raise HTTPException(status_code=e.code, detail=f"Supabase error: {error_body}")
+
+
+def create_campaign_if_new(user_id: str, campaign_id: str, metadata: dict = None) -> str:
+    """
+    Create a campaign in the database if it doesn't exist.
+    Returns the campaign_id (uses the provided UUID if valid).
+    """
+    if not campaign_id:
+        raise HTTPException(status_code=400, detail="campaign_id is required")
+
+    # Check if campaign already exists
+    existing_campaign = supabase_request(
+        f"campaigns?id=eq.{campaign_id}&select=id",
+        'GET'
+    )
+    if existing_campaign and len(existing_campaign) > 0:
+        return campaign_id  # Campaign exists, use it
+
+    # Get the next campaign number for this user
+    existing = supabase_request(
+        f"campaigns?user_id=eq.{user_id}&select=campaign_number&order=campaign_number.desc&limit=1",
+        'GET'
+    )
+    next_number = (existing[0]['campaign_number'] + 1) if existing else 1
+
+    # Create the campaign with the provided UUID
+    metadata = metadata or {}
+    campaign_data = {
+        'id': campaign_id,  # Use the UUID provided by the extension
+        'user_id': user_id,
+        'campaign_number': next_number,
+        'representative_subject': metadata.get('representative_subject', 'New Campaign'),
+        'representative_recipient': metadata.get('representative_recipient', ''),
+        'email_count': 0,
+        'avg_similarity': None,
+    }
+
+    result = supabase_request('campaigns', 'POST', campaign_data)
+    if result and len(result) > 0:
+        print(f"[Campaign] Created new campaign {campaign_id}")
+        return campaign_id
+
+    raise HTTPException(status_code=500, detail="Failed to create campaign")
 
 
 # =============================================================================
@@ -393,6 +469,10 @@ async def create_user(user: UserCreate):
         'email': user.email,
         'google_id': user.google_id
     })
+
+    # Track new user created
+    if result and len(result) > 0:
+        await track_user_created(result[0]['id'], user.email)
 
     return {"user": result[0], "created": True}
 
@@ -554,6 +634,15 @@ async def send_email_batch(request: SendBatchRequest):
     sent_count = sum(1 for r in results if r["success"])
     failed_count = sum(1 for r in results if not r["success"])
 
+    # Track email batch sent
+    await track_email_batch_sent(
+        request.user_id,
+        request.campaign_id or '',
+        len(request.emails),
+        sent_count,
+        failed_count
+    )
+
     return {
         "total": len(request.emails),
         "sent": sent_count,
@@ -652,6 +741,19 @@ async def cluster_user_campaigns(request: ClusterRequest):
         # Fallback to synchronous save if async client not available
         save_campaigns_to_supabase(request.user_id, result['campaigns'])
         save_result = {"campaigns_saved": len(result['campaigns']), "email_links_saved": 0}
+
+    # Track clustering completed
+    avg_similarity = 0.0
+    if result['campaigns']:
+        similarities = [c.get('avg_similarity', 0) for c in result['campaigns'] if c.get('avg_similarity')]
+        avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
+    await track_campaign_clustering_completed(
+        request.user_id,
+        result['total_emails'],
+        result['unique_campaigns'],
+        avg_similarity,
+        0  # duration_ms - would need timing wrapper
+    )
 
     return {
         "total_emails": result['total_emails'],
@@ -792,6 +894,14 @@ async def create_followup_plan(request: CreateFollowupPlanRequest):
         campaign_id=request.campaign_id,
     )
 
+    # Track followups scheduled
+    await track_followup_scheduled(
+        request.user_id,
+        request.campaign_id,
+        len(result["scheduled"]),
+        len(request.emails)
+    )
+
     return {
         "plans": result["plans"],
         "scheduled_count": len(result["scheduled"]),
@@ -840,6 +950,9 @@ async def cancel_followup(followup_id: str, reason: str = "manual_cancel"):
     if not success:
         raise HTTPException(status_code=404, detail="Followup not found or already processed")
 
+    # Track followup cancelled
+    await track_followup_cancelled('unknown', followup_id, reason)
+
     return {"success": True, "followup_id": followup_id, "status": "cancelled"}
 
 
@@ -878,6 +991,9 @@ async def generate_leads(request: LeadGenerateRequest):
     print(f"[LeadGen] Query: {request.query}")
     print(f"[LeadGen] Limit: {request.limit}")
 
+    # Create campaign if it's a new one (has 'new_' prefix)
+    campaign_id = create_campaign_if_new(request.user_id, request.campaign_id)
+
     # Initialize the PeopleFinderAgent
     agent_supabase = AgentSupabaseClient()
     people_finder = PeopleFinderAgent(agent_supabase)
@@ -899,16 +1015,27 @@ async def generate_leads(request: LeadGenerateRequest):
         save_result = await save_generated_leads(
             client=async_supabase_client,
             user_id=request.user_id,
-            campaign_id=request.campaign_id,
+            campaign_id=campaign_id,
             query=request.query,
             leads=contacts,
         )
         print(f"[LeadGen] Saved {save_result['leads_saved']} leads to Supabase")
 
+        # Track lead generation
+        await track_lead_generation_completed(
+            request.user_id,
+            campaign_id,
+            request.query,
+            len(contacts),
+            'aviato',  # API used
+            0  # duration_ms
+        )
+
         return {
             "leads": contacts,
             "count": len(contacts),
             "saved": save_result,
+            "campaign_id": campaign_id,  # Return actual UUID so frontend can update
         }
 
     except Exception as e:
@@ -923,22 +1050,35 @@ async def generate_leads(request: LeadGenerateRequest):
 @app.post("/templates/generate")
 async def generate_template(request: TemplateGenerateRequest):
     """
-    Generate an email template using the DebateOrchestrator.
+    Generate an email template using LangGraph multi-agent debate.
 
     Runs a multi-agent debate (Style, CTA, BestPractice) to create
     an optimized email template with placeholders.
     Saves generated template to Supabase for later retrieval.
+
+    Returns the template and a communication log showing agent interactions
+    (required for Foresters Financial hackathon challenge).
     """
     print(f"[TemplateGen] Generating template for campaign {request.campaign_id}")
     print(f"[TemplateGen] CTA: {request.cta[:100]}..." if len(request.cta) > 100 else f"[TemplateGen] CTA: {request.cta}")
 
-    # Initialize the DebateOrchestrator
+    # Create campaign if it's a new one (has 'new_' prefix)
+    campaign_id = create_campaign_if_new(request.user_id, request.campaign_id)
+
+    # Initialize the LangGraph DebateOrchestrator (multi-agent with state management)
     llm_client = LLMClient()
-    orchestrator = DebateOrchestrator(llm_client)
+    orchestrator = LangGraphDebateOrchestrator(llm_client)
+
+    # Get feedback service for "ever improving" enhancements
+    feedback_service = get_feedback_service()
 
     try:
         # Build style prompt, incorporating current template if provided
         style_prompt = request.style_prompt
+
+        # FEEDBACK LOOP: Enhance prompt with learned patterns
+        style_prompt = feedback_service.enhance_style_prompt(style_prompt, request.user_id)
+        print(f"[TemplateGen] Enhanced style prompt with learned patterns")
         if request.current_subject or request.current_body:
             style_prompt += f"\n\nThe user has a current draft they want to improve:\n"
             if request.current_subject:
@@ -947,8 +1087,9 @@ async def generate_template(request: TemplateGenerateRequest):
                 style_prompt += f"CURRENT BODY:\n{request.current_body}\n"
             style_prompt += "\nUse this as inspiration but improve upon it."
 
-        # Run the debate to generate the template
-        template = await orchestrator.run_debate(
+        # Run the LangGraph debate to generate the template
+        # Returns both the template and the communication log
+        template, communication_log = await orchestrator.run_debate(
             cta=request.cta,
             style_prompt=style_prompt,
             sample_emails=request.sample_emails,
@@ -957,6 +1098,7 @@ async def generate_template(request: TemplateGenerateRequest):
         )
 
         print(f"[TemplateGen] Generated template: {template.subject}")
+        print(f"[TemplateGen] Communication log: {len(communication_log)} agent messages")
 
         template_dict = {
             "subject": template.subject,
@@ -964,30 +1106,141 @@ async def generate_template(request: TemplateGenerateRequest):
             "placeholders": template.placeholders,
         }
 
-        # Save generated template to Supabase (only if campaign has a real UUID)
-        # Temporary campaign IDs start with "new_" and can't be saved to DB
-        save_result = {"template_saved": False, "skipped": "temporary campaign ID"}
-        if not request.campaign_id.startswith("new_"):
-            save_result = await save_generated_template(
-                client=async_supabase_client,
-                user_id=request.user_id,
-                campaign_id=request.campaign_id,
-                template=template_dict,
-                cta=request.cta,
-                style_prompt=request.style_prompt,
-            )
-            print(f"[TemplateGen] Saved template to Supabase: {save_result}")
-        else:
-            print(f"[TemplateGen] Skipping save - campaign '{request.campaign_id}' is temporary (not yet created)")
+        # Save generated template to Supabase
+        save_result = await save_generated_template(
+            client=async_supabase_client,
+            user_id=request.user_id,
+            campaign_id=campaign_id,
+            template=template_dict,
+            cta=request.cta,
+            style_prompt=request.style_prompt,
+        )
+        print(f"[TemplateGen] Saved template to Supabase: {save_result}")
+
+        # Track template generation
+        await track_template_generation_completed(
+            request.user_id,
+            campaign_id,
+            request.cta[:50] if request.cta else None,
+            0,  # generation_time_ms
+            True,
+            len(template.body) if template.body else 0
+        )
+
+        # FEEDBACK LOOP: Record template for quality tracking
+        template_id = f"{campaign_id}_{int(datetime.now().timestamp())}"
+        feedback_service.record_template_generated(
+            template_id=template_id,
+            campaign_id=campaign_id,
+            user_id=request.user_id,
+            subject=template.subject or '',
+            body=template.body or '',
+        )
 
         return {
             "template": template_dict,
+            "template_id": template_id,  # For tracking edits
             "saved": save_result,
+            "communication_log": communication_log,  # Agent interaction history for demo
+            "feedback_enhanced": True,  # Indicates feedback loop was applied
+            "campaign_id": campaign_id,  # Return actual UUID so frontend can update
         }
 
     except Exception as e:
         print(f"[TemplateGen] Error: {e}")
         raise HTTPException(status_code=500, detail=f"Template generation failed: {str(e)}")
+
+
+# -----------------------------------------------------------------------------
+# FEEDBACK LOOP ENDPOINTS - "Ever Improving" AI
+# -----------------------------------------------------------------------------
+
+@app.get("/feedback/{user_id}")
+async def get_feedback_summary(user_id: str):
+    """
+    Get feedback loop summary showing how the AI is improving.
+
+    Returns:
+    - Templates analyzed and their quality scores
+    - Learned patterns from user behavior
+    - Style recommendations for future generations
+    - Query keyword recommendations
+
+    This endpoint demonstrates the "ever improving" system for the
+    Amplitude hackathon prize track.
+    """
+    feedback_service = get_feedback_service()
+    summary = feedback_service.get_feedback_summary(user_id)
+
+    return {
+        "user_id": user_id,
+        "feedback_loop_active": True,
+        "summary": summary,
+        "description": {
+            "templates_analyzed": "Number of templates tracked for quality",
+            "high_performing_templates": "Templates with low edit rate + high engagement",
+            "style_recommendations": "Learned preferences applied to future generations",
+            "patterns_learned": "Winning patterns extracted from successful templates",
+        }
+    }
+
+
+class RecordEditRequest(BaseModel):
+    """Request to record template edits for learning."""
+    template_id: str
+    user_id: str
+    new_subject: str
+    new_body: str
+
+
+@app.post("/feedback/record-edit")
+async def record_template_edit(request: RecordEditRequest):
+    """
+    Record when a user edits an AI-generated template.
+
+    This analyzes exactly what the user changed and updates their
+    preference profile so future templates better match their style.
+
+    Tracks:
+    - Subject length preference (short/medium/long)
+    - Body length preference
+    - Tone preference (casual/professional/formal)
+    - CTA strength preference (soft/medium/strong)
+    - Personalization preference
+    - Bullet point preference
+    - Simple language preference
+    """
+    feedback_service = get_feedback_service()
+    result = feedback_service.record_template_edited(
+        template_id=request.template_id,
+        new_subject=request.new_subject,
+        new_body=request.new_body,
+        user_id=request.user_id,
+    )
+
+    return {
+        "success": True,
+        "template_id": request.template_id,
+        "edit_analysis": result.get('analysis', {}),
+        "preferences_updated": result.get('preferences_updated', False),
+        "current_preferences": result.get('current_preferences', {}),
+        "message": "Your preferences have been updated. Future templates will better match your style.",
+    }
+
+
+@app.get("/feedback/query-suggestions")
+async def get_query_suggestions(partial_query: str = ''):
+    """
+    Get query suggestions based on what has worked before.
+
+    Returns queries ranked by conversion rate (leads → sent emails).
+    """
+    feedback_service = get_feedback_service()
+
+    return {
+        "suggestions": feedback_service.get_query_suggestions(partial_query),
+        "top_keywords": feedback_service.get_keyword_recommendations(),
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -1003,6 +1256,9 @@ async def generate_cadence(request: CadenceGenerateRequest):
     """
     print(f"[CadenceGen] Generating cadence for campaign {request.campaign_id}")
 
+    # Create campaign if it's a new one (has 'new_' prefix)
+    campaign_id = create_campaign_if_new(request.user_id, request.campaign_id)
+
     agent_supabase = AgentSupabaseClient()
     followup_agent = FollowupAgent(agent_supabase)
 
@@ -1010,7 +1266,7 @@ async def generate_cadence(request: CadenceGenerateRequest):
         # Generate cadence using enhanced FollowupAgent
         cadence = await followup_agent.generate_full_cadence(
             user_id=request.user_id,
-            campaign_id=request.campaign_id,
+            campaign_id=campaign_id,
             style_prompt=request.style_prompt,
             sample_emails=request.sample_emails,
             timing={
@@ -1027,15 +1283,15 @@ async def generate_cadence(request: CadenceGenerateRequest):
         save_result = await save_generated_cadence(
             client=async_supabase_client,
             user_id=request.user_id,
-            campaign_id=request.campaign_id,
+            campaign_id=campaign_id,
             cadence_emails=cadence,
         )
         print(f"[CadenceGen] Saved cadence to Supabase: {save_result}")
 
         # Fetch saved cadence to get IDs
-        saved_cadence = await get_generated_cadence(async_supabase_client, request.campaign_id)
+        saved_cadence = await get_generated_cadence(async_supabase_client, campaign_id)
 
-        return {"cadence": saved_cadence, "saved": save_result}
+        return {"cadence": saved_cadence, "saved": save_result, "campaign_id": campaign_id}
 
     except Exception as e:
         print(f"[CadenceGen] Error: {e}")

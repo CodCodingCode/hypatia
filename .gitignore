@@ -2,6 +2,8 @@
 extension/config.js
 .env
 secrets/
+credentials.json
+gcp-service-account.json
 
 # Python
 __pycache__/
@@ -11,8 +13,6 @@ client_secret.json
 
 # Output files
 *.csv
-*.json
-!package.json
 
 # OS files
 .DS_Store

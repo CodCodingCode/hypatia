@@ -56,9 +56,7 @@ CONFIG = {
     "SUPABASE_ANON_KEY": os.environ.get("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY"),
 }
 
-AVIATO_API_KEY = os.environ.get(
-    "AVIATO_API_KEY", "a770545826390216df81d617f331b30ae27998d7cc886c8f"
-)
+AVIATO_API_KEY = os.environ.get("AVIATO_API_KEY", "")
 AVIATO_BASE_URL = "https://data.api.aviato.co"
 MAX_ENRICHMENTS_PER_CAMPAIGN = 3
 API_RATE_LIMIT_DELAY = 0.5  # seconds between API calls
@@ -67,7 +65,7 @@ CONSECUTIVE_FAILURES_THRESHOLD = 5
 # OpenRouter config
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-GPT_MODEL = "google/gemini-2.0-flash-001"
+GPT_MODEL = "google/gemini-3-flash-preview"
 
 # Campaign filtering
 MIN_CAMPAIGN_SIZE = 2
@@ -181,7 +179,10 @@ def save_enrichment(user_id: str, result: EnrichmentResult):
         "enriched_at": datetime.now(timezone.utc).isoformat(),
     }
     supabase_request(
-        "contact_enrichments?on_conflict=user_id,email", method="POST", body=body, upsert=True
+        "contact_enrichments?on_conflict=user_id,email",
+        method="POST",
+        body=body,
+        upsert=True,
     )
 
 
@@ -350,14 +351,17 @@ def enrich_campaign_contacts(
 
 def get_campaign_emails(campaign_id: str, limit: int = MAX_SAMPLE) -> list[dict]:
     """Fetch emails for a campaign."""
-    email_links = supabase_request(
-        f"email_campaigns?campaign_id=eq.{campaign_id}&select=email_id"
-    ) or []
+    email_links = (
+        supabase_request(
+            f"email_campaigns?campaign_id=eq.{campaign_id}&select=email_id"
+        )
+        or []
+    )
 
     if not email_links:
         return []
 
-    email_ids = [e['email_id'] for e in email_links]
+    email_ids = [e["email_id"] for e in email_links]
 
     if len(email_ids) > limit:
         email_ids = random.sample(email_ids, limit)
@@ -371,7 +375,7 @@ def get_campaign_emails(campaign_id: str, limit: int = MAX_SAMPLE) -> list[dict]
             emails.append(result[0])
 
     # Sort by sent_at to get first email
-    emails.sort(key=lambda x: x.get('sent_at', '') or '')
+    emails.sort(key=lambda x: x.get("sent_at", "") or "")
     return emails
 
 
@@ -392,9 +396,7 @@ def get_campaign_first_email(campaign_id: str) -> dict | None:
 
 def get_cached_cta(campaign_id: str) -> dict | None:
     """Check if CTA already exists for campaign."""
-    result = supabase_request(
-        f"campaign_ctas?campaign_id=eq.{campaign_id}&select=*"
-    )
+    result = supabase_request(f"campaign_ctas?campaign_id=eq.{campaign_id}&select=*")
     if result and len(result) > 0:
         return result[0]
     return None
@@ -435,10 +437,7 @@ def save_campaign_cta(campaign_id: str, cta_analysis: dict):
         "urgency": cta_analysis.get("urgency"),
     }
     result = supabase_request(
-        "campaign_ctas?on_conflict=campaign_id",
-        method="POST",
-        body=body,
-        upsert=True
+        "campaign_ctas?on_conflict=campaign_id", method="POST", body=body, upsert=True
     )
     if result:
         print(f"    Saved CTA to Supabase")
@@ -448,12 +447,17 @@ def save_campaign_cta(campaign_id: str, cta_analysis: dict):
 def save_style_analysis(campaign_id: str, analysis: dict, sample_count: int):
     """Save the style analysis to Supabase."""
     data = {
-        'campaign_id': campaign_id,
-        'one_sentence_description': analysis.get('one_sentence_description', ''),
-        'style_analysis_prompt': analysis.get('style_analysis_prompt', ''),
-        'sample_emails_analyzed': sample_count,
+        "campaign_id": campaign_id,
+        "one_sentence_description": analysis.get("one_sentence_description", ""),
+        "style_analysis_prompt": analysis.get("style_analysis_prompt", ""),
+        "sample_emails_analyzed": sample_count,
     }
-    supabase_request('campaign_email_styles?on_conflict=campaign_id', method='POST', body=data, upsert=True)
+    supabase_request(
+        "campaign_email_styles?on_conflict=campaign_id",
+        method="POST",
+        body=data,
+        upsert=True,
+    )
     print(f"    Saved style to Supabase")
 
 
@@ -464,7 +468,10 @@ def save_contact_description(campaign_id: str, description: str):
         "contact_description": description,
     }
     supabase_request(
-        "campaign_contacts?on_conflict=campaign_id", method="POST", body=body, upsert=True
+        "campaign_contacts?on_conflict=campaign_id",
+        method="POST",
+        body=body,
+        upsert=True,
     )
     print(f"    Saved contact description to Supabase")
 
@@ -503,13 +510,15 @@ def build_enrichment_profiles_text(enrichments: list[EnrichmentResult]) -> str:
                 profile_str += f" at {company}"
             profiles_summary.append(profile_str)
 
-    return "\n".join(profiles_summary) if profiles_summary else "No enriched profile data available."
+    return (
+        "\n".join(profiles_summary)
+        if profiles_summary
+        else "No enriched profile data available."
+    )
 
 
 async def analyze_campaign_combined_async(
-    emails: list[dict],
-    enrichments: list[EnrichmentResult],
-    user_context: dict
+    emails: list[dict], enrichments: list[EnrichmentResult], user_context: dict
 ) -> dict:
     """
     Use Backboard to analyze emails and extract CTA, style, and contact description
@@ -520,16 +529,16 @@ async def analyze_campaign_combined_async(
     # Build email samples for style analysis (all emails)
     email_texts = []
     for i, email in enumerate(emails, 1):
-        subject = email.get('subject', '(no subject)')
-        body = email.get('body', '')[:1500]
+        subject = email.get("subject", "(no subject)")
+        body = email.get("body", "")[:1500]
         email_texts.append(f"--- Email {i} ---\nSubject: {subject}\n\n{body}")
 
     emails_content = "\n\n".join(email_texts)
 
     # First email for CTA analysis
     first_email = emails[0] if emails else {}
-    first_subject = first_email.get('subject', '')
-    first_body = first_email.get('body', '')[:2000]
+    first_subject = first_email.get("subject", "")
+    first_body = first_email.get("body", "")[:2000]
 
     # Enrichment profiles for contact analysis
     profiles_text = build_enrichment_profiles_text(enrichments)
@@ -576,6 +585,11 @@ Return a JSON object with exactly these three sections:
 3. "contact" - Describe who is being contacted:
    - "contact_description": ONE concise sentence describing the people being contacted (e.g., "recruiters at Google", "medical researchers at Harvard", "managing engineers at big tech companies")
 
+GOOD EXAMPLES:
+ - Recruiters at Google (breif and concise)
+
+Bad EXAMPLE:
+- Medical researchers or professional nurses who will help the user in assissting their task of curing diseases. (too long, and the exact person emailled is vague. Need EXACT role.)
 Respond ONLY with valid JSON, no other text or markdown formatting."""
 
     max_retries = 2
@@ -600,20 +614,24 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
     )
 
     for attempt in range(max_retries):
-        print(f"  [Attempt {attempt + 1}/{max_retries}] Sending request to OpenRouter...")
+        print(
+            f"  [Attempt {attempt + 1}/{max_retries}] Sending request to OpenRouter..."
+        )
         try:
             response = await client.chat.completions.create(
                 model=GPT_MODEL,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
             )
             print(f"  [Attempt {attempt + 1}/{max_retries}] Response received!")
 
             result_text = response.choices[0].message.content.strip()
-            print(f"  [Attempt {attempt + 1}/{max_retries}] Response length: {len(result_text)} chars")
-            print(f"  [Attempt {attempt + 1}/{max_retries}] Response starts with: {result_text[:100]}...")
+            print(
+                f"  [Attempt {attempt + 1}/{max_retries}] Response length: {len(result_text)} chars"
+            )
+            print(
+                f"  [Attempt {attempt + 1}/{max_retries}] Response starts with: {result_text[:100]}..."
+            )
 
             # Clean up potential markdown code blocks
             if result_text.startswith("```"):
@@ -624,15 +642,19 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
 
             try:
                 parsed = json.loads(result_text)
-                print(f"  [Attempt {attempt + 1}/{max_retries}] JSON parsed successfully!")
+                print(
+                    f"  [Attempt {attempt + 1}/{max_retries}] JSON parsed successfully!"
+                )
                 return parsed
             except json.JSONDecodeError as je:
                 # Try to extract JSON object if there's extra content
-                json_match = re.search(r'\{[\s\S]*\}', result_text)
+                json_match = re.search(r"\{[\s\S]*\}", result_text)
                 if json_match:
                     try:
                         parsed = json.loads(json_match.group())
-                        print(f"  [Attempt {attempt + 1}/{max_retries}] JSON extracted and parsed successfully!")
+                        print(
+                            f"  [Attempt {attempt + 1}/{max_retries}] JSON extracted and parsed successfully!"
+                        )
                         return parsed
                     except json.JSONDecodeError:
                         pass
@@ -653,7 +675,9 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
             continue
         except Exception as e:
             last_error = e
-            print(f"    [Attempt {attempt + 1}/{max_retries}] EXCEPTION: {type(e).__name__}: {e}")
+            print(
+                f"    [Attempt {attempt + 1}/{max_retries}] EXCEPTION: {type(e).__name__}: {e}"
+            )
             if attempt >= max_retries - 1:
                 break
             print(f"    Retrying...")
@@ -681,12 +705,12 @@ Respond ONLY with valid JSON, no other text or markdown formatting."""
 
 
 def analyze_campaign_combined(
-    emails: list[dict],
-    enrichments: list[EnrichmentResult],
-    user_context: dict
+    emails: list[dict], enrichments: list[EnrichmentResult], user_context: dict
 ) -> dict:
     """Synchronous wrapper for analyze_campaign_combined_async."""
-    return asyncio.run(analyze_campaign_combined_async(emails, enrichments, user_context))
+    return asyncio.run(
+        analyze_campaign_combined_async(emails, enrichments, user_context)
+    )
 
 
 # =============================================================================
@@ -723,7 +747,12 @@ def analyze_single_campaign_combined(
     cached_style = get_cached_style(campaign_id)
     cached_contact = get_cached_contact(campaign_id)
 
-    if cached_cta and cached_style and cached_style.get('one_sentence_description') and cached_contact:
+    if (
+        cached_cta
+        and cached_style
+        and cached_style.get("one_sentence_description")
+        and cached_contact
+    ):
         print(f"    [CACHED] All analyses exist, returning cached data")
         return {
             "cta_type": cached_cta.get("cta_type"),
@@ -739,7 +768,9 @@ def analyze_single_campaign_combined(
     # Get sample emails (2-5)
     emails = get_campaign_emails(campaign_id, MAX_SAMPLE)
     if len(emails) < MIN_SAMPLE:
-        print(f"    Not enough emails ({len(emails)}) for analysis, need at least {MIN_SAMPLE}")
+        print(
+            f"    Not enough emails ({len(emails)}) for analysis, need at least {MIN_SAMPLE}"
+        )
         return None
 
     # Get enrichments
@@ -812,7 +843,9 @@ def main():
 
         campaigns = get_user_campaigns(user["id"])
         if not campaigns:
-            print(f"  No qualifying campaigns found (need >= {MIN_CAMPAIGN_SIZE} emails)")
+            print(
+                f"  No qualifying campaigns found (need >= {MIN_CAMPAIGN_SIZE} emails)"
+            )
             continue
 
         print(f"  Found {len(campaigns)} qualifying campaigns")
@@ -833,11 +866,13 @@ def main():
                 print(f"    CTA Type: {result.get('cta_type')}")
                 print(f"    Style: {result.get('style_description', '')[:80]}...")
                 print(f"    Contacts: {result.get('contact_description')}")
-                all_results.append({
-                    "campaign_id": campaign_id,
-                    "campaign_number": campaign_num,
-                    **result
-                })
+                all_results.append(
+                    {
+                        "campaign_id": campaign_id,
+                        "campaign_number": campaign_num,
+                        **result,
+                    }
+                )
 
     print("\n\n" + "=" * 70)
     print(f"COMPLETE: Analyzed {len(all_results)} campaigns")

@@ -662,6 +662,11 @@ function showValidationError(message) {
 function handleQuestionnaireComplete() {
   questionnaireState.isComplete = true;
 
+  // Track questionnaire completed
+  if (window.HypatiaAnalytics) {
+    window.HypatiaAnalytics.trackQuestionnaireCompleted(questionnaireState.answers);
+  }
+
   // Submit answers to background script
   chrome.runtime.sendMessage({
     action: 'submitQuestionnaire',
@@ -707,6 +712,13 @@ function checkBothProcessesComplete() {
 
 function handleStartOnboarding() {
   console.log('[Hypatia] Starting onboarding...');
+
+  // Track onboarding started
+  if (window.HypatiaAnalytics) {
+    window.HypatiaAnalytics.trackOnboardingStarted();
+    window.HypatiaAnalytics.trackOnboardingAuthStarted();
+  }
+
   currentStep = 'signing_in';
   updatePanelContent();
 
@@ -733,6 +745,10 @@ function handleOnboardingProgressUpdate(data) {
       progressData.message = data.message;
       if (data.displayName) {
         userDisplayName = data.displayName;
+        // Track auth completed with email
+        if (window.HypatiaAnalytics && data.email) {
+          window.HypatiaAnalytics.trackOnboardingAuthCompleted(data.email);
+        }
       }
       // Update signing in status (new flow) or progress status (legacy)
       const signinStatus = document.getElementById('hypatia-signin-status');
@@ -759,6 +775,15 @@ function handleOnboardingProgressUpdate(data) {
       questionnaireState.isComplete = false;
       backendState.isComplete = false;
       currentStep = 'questionnaire';
+
+      // Track questionnaire started and identify user
+      if (window.HypatiaAnalytics) {
+        window.HypatiaAnalytics.identify(currentUserId, {
+          display_name: userDisplayName
+        });
+        window.HypatiaAnalytics.trackQuestionnaireStarted();
+      }
+
       updatePanelContent();
       break;
 
@@ -819,6 +844,15 @@ function handleOnboardingProgressUpdate(data) {
       if (data.campaigns && data.campaigns.length > 0) {
         campaignsData = data.campaigns;
       }
+
+      // Track onboarding finished
+      if (window.HypatiaAnalytics) {
+        window.HypatiaAnalytics.trackOnboardingFinished(
+          data.emailCount || 0,
+          data.campaignsCreated || 0
+        );
+      }
+
       updatePanelContent();
       updateButtonState(true);
       break;

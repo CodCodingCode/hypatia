@@ -10,19 +10,44 @@ This script:
 
 Usage:
     python setup_gmail_watch.py
+
+Requires .env file with:
+    GOOGLE_CLIENT_ID
+    GOOGLE_CLIENT_SECRET
+    SUPABASE_URL
+    SUPABASE_ANON_KEY
+    GMAIL_WATCH_USER_ID
+    GCP_PROJECT_ID
 """
 
 import http.server
 import json
+import os
 import urllib.parse
 import urllib.request
 import webbrowser
 import threading
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
-# OAuth credentials
-CLIENT_ID = "544423830425-3jhtld6rcqtkh4n7cac5v5tpgu5n4q7d.apps.googleusercontent.com"
-CLIENT_SECRET = "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"
+
+def load_env():
+    """Load environment variables from .env file if it exists."""
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+
+
+load_env()
+
+# OAuth credentials from environment
+CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 REDIRECT_URI = "http://localhost:8080/oauth/callback"
 
 # Gmail scopes needed
@@ -32,15 +57,16 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
 ]
 
-# Supabase config
-SUPABASE_URL = "https://tvwghwfqscbikvwvujcy.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2d2dod2Zxc2NiaWt2d3Z1amN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2MTA3NjMsImV4cCI6MjA4NDE4Njc2M30.Bm8go_SSwuX-oUJhY1bY7Se4YlkeuqgM5IOeNnghbxM"
+# Supabase config from environment
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 
-# Your user ID from Supabase
-USER_ID = "e63bc9d6-a1e1-4a63-aa7d-2381fd1d9dfe"
+# Your user ID from Supabase (for local testing)
+USER_ID = os.environ.get("GMAIL_WATCH_USER_ID", "")
 
 # Pub/Sub topic for Gmail notifications
-PUBSUB_TOPIC = "projects/hypatia-484602/topics/gmail-notifications"
+GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
+PUBSUB_TOPIC = f"projects/{GCP_PROJECT_ID}/topics/gmail-notifications" if GCP_PROJECT_ID else ""
 
 # Global to capture auth code
 auth_code = None
@@ -193,6 +219,23 @@ def main():
     print("=" * 60)
     print("Gmail Watch Setup")
     print("=" * 60)
+
+    # Validate required environment variables
+    required_vars = {
+        "GOOGLE_CLIENT_ID": CLIENT_ID,
+        "GOOGLE_CLIENT_SECRET": CLIENT_SECRET,
+        "SUPABASE_URL": SUPABASE_URL,
+        "SUPABASE_ANON_KEY": SUPABASE_KEY,
+        "GMAIL_WATCH_USER_ID": USER_ID,
+        "GCP_PROJECT_ID": GCP_PROJECT_ID,
+    }
+    missing = [k for k, v in required_vars.items() if not v]
+    if missing:
+        print("\nERROR: Missing required environment variables:")
+        for var in missing:
+            print(f"  - {var}")
+        print("\nPlease set these in your .env file.")
+        return
 
     # Start local server
     server = http.server.HTTPServer(("localhost", 8080), OAuthHandler)

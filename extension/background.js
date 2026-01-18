@@ -224,6 +224,52 @@ async function getOrCreateUser(email, googleId) {
   return created[0];
 }
 
+async function recoverUserSession() {
+  // Auto-recover user session when storage is empty but user exists in Supabase
+  // This handles cases where extension storage was cleared/lost
+  // IMPORTANT: Uses non-interactive auth to avoid triggering onboarding flow
+  console.log('[Hypatia] Attempting session recovery (non-interactive)...');
+  try {
+    // 1. Try to get cached Google auth token (non-interactive - won't prompt user)
+    const token = await new Promise((resolve, reject) => {
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (chrome.runtime.lastError || !token) {
+          reject(new Error('No cached token available'));
+        } else {
+          resolve(token);
+        }
+      });
+    });
+
+    const userInfo = await getUserInfo(token);
+    console.log('[Hypatia] Recovery: Got user info for', userInfo.email);
+
+    // 2. Look up existing user in Supabase by email
+    const existingUser = await supabaseRequest(
+      `users?email=eq.${encodeURIComponent(userInfo.email)}&select=*`,
+      'GET'
+    );
+
+    if (existingUser && existingUser.length > 0) {
+      // 3. Restore storage (without triggering any onboarding)
+      const userId = existingUser[0].id;
+      await chrome.storage.local.set({
+        userId: userId,
+        userEmail: userInfo.email,
+        onboardingComplete: true
+      });
+      console.log('[Hypatia] Recovery successful! Restored userId:', userId);
+      return userId;
+    }
+
+    console.log('[Hypatia] Recovery failed: User not found in Supabase');
+    return null;
+  } catch (error) {
+    console.log('[Hypatia] Recovery requires re-auth:', error.message);
+    return null;
+  }
+}
+
 async function saveEmailsToSupabase(userId, emails) {
   // Add user_id to each email
   const emailsWithUser = emails.map(email => ({
@@ -396,7 +442,14 @@ async function fetchCampaignEmails(campaignId) {
 // =============================================================================
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('[Hypatia BG] Message received:', request.action, 'from tab:', sender?.tab?.id);
+
   if (request.action === 'startOnboarding') {
+    console.log('[Hypatia BG] Starting onboarding for tab:', sender?.tab?.id);
+    if (!sender?.tab?.id) {
+      console.error('[Hypatia BG] No tab ID available!');
+      return true;
+    }
     handleOnboarding(sender.tab.id);
     return true;
   }
@@ -433,6 +486,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'updateCampaign') {
     updateCampaignFields(request.campaignId, request.fields).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'createCampaign') {
+    createNewCampaign(request.userId, request.campaignData).then(sendResponse);
     return true;
   }
 
@@ -540,6 +598,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(sendResponse);
     return true;
   }
+
+  if (request.action === 'analyzeContactPreference') {
+    handleAnalyzeContactPreference(request.text)
+      .then(sendResponse);
+    return true;
+  }
 });
 
 // =============================================================================
@@ -626,6 +690,15 @@ async function handleQuestionnaireSubmission(userId, answers) {
 async function handleGetCampaigns(userId) {
   console.log('[Hypatia] handleGetCampaigns called with userId:', userId);
   try {
+    // Auto-recover if userId is missing (storage was cleared)
+    if (!userId) {
+      console.log('[Hypatia] No userId provided, attempting session recovery...');
+      userId = await recoverUserSession();
+      if (!userId) {
+        return { success: false, error: 'Please sign in again', needsReauth: true };
+      }
+    }
+
     const campaigns = await fetchUserCampaigns(userId);
     console.log('[Hypatia] handleGetCampaigns returning:', campaigns?.length || 0, 'campaigns');
     return { success: true, campaigns };
@@ -694,6 +767,70 @@ async function updateCampaignFields(campaignId, fields) {
     return { success: true };
   } catch (error) {
     console.error('Failed to update campaign fields:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function createNewCampaign(userId, campaignData) {
+  /**
+   * Create a new campaign in Supabase and optionally set CTA/contact descriptions.
+   * campaignData can contain: representative_subject, representative_recipient, cta_description, contact_description
+   */
+  try {
+    // Get the next campaign_number for this user
+    const existingCampaigns = await supabaseRequest(
+      `campaigns?user_id=eq.${userId}&select=campaign_number&order=campaign_number.desc&limit=1`,
+      'GET'
+    );
+    const nextCampaignNumber = (existingCampaigns && existingCampaigns.length > 0)
+      ? existingCampaigns[0].campaign_number + 1
+      : 1;
+
+    // Create the campaign record
+    const result = await supabaseRequest(
+      'campaigns',
+      'POST',
+      {
+        user_id: userId,
+        campaign_number: nextCampaignNumber,
+        representative_subject: campaignData.representative_subject || 'New Campaign',
+        representative_recipient: campaignData.representative_recipient || '',
+        email_count: 0
+      }
+    );
+
+    console.log('[Hypatia] Create campaign result:', result);
+
+    // Supabase POST returns an array
+    const newCampaign = Array.isArray(result) ? result[0] : result;
+    if (!newCampaign || !newCampaign.id) {
+      throw new Error('Failed to create campaign - no ID returned');
+    }
+
+    const campaignId = newCampaign.id;
+    console.log('[Hypatia] Created new campaign with ID:', campaignId);
+
+    // Save CTA description if provided
+    if (campaignData.cta_description) {
+      await supabaseRequest(
+        'campaign_ctas',
+        'POST',
+        { campaign_id: campaignId, cta_description: campaignData.cta_description }
+      );
+    }
+
+    // Save contact description if provided
+    if (campaignData.contact_description) {
+      await supabaseRequest(
+        'campaign_contacts',
+        'POST',
+        { campaign_id: campaignId, contact_description: campaignData.contact_description }
+      );
+    }
+
+    return { success: true, campaignId: campaignId, campaign: newCampaign };
+  } catch (error) {
+    console.error('Failed to create campaign:', error);
     return { success: false, error: error.message };
   }
 }
@@ -876,6 +1013,22 @@ function sendProgressToTab(tabId, data) {
 
 async function checkOnboardingStatus() {
   const data = await chrome.storage.local.get(['onboardingComplete', 'userEmail', 'userId']);
+
+  // If storage is empty but user might be logged in, try to recover
+  if (!data.userId) {
+    console.log('[Hypatia] No userId in storage, attempting auto-recovery...');
+    const recoveredUserId = await recoverUserSession();
+    if (recoveredUserId) {
+      // Re-read storage after recovery
+      const newData = await chrome.storage.local.get(['onboardingComplete', 'userEmail', 'userId']);
+      return {
+        complete: newData.onboardingComplete || false,
+        email: newData.userEmail || null,
+        userId: newData.userId || null
+      };
+    }
+  }
+
   return {
     complete: data.onboardingComplete || false,
     email: data.userEmail || null,
@@ -1088,9 +1241,9 @@ async function handleGenerateTemplate(userId, campaignId, cta, stylePrompt, samp
     }
 
     const result = await response.json();
-    console.log('[Hypatia] Generated template:', result.template?.subject);
+    console.log('[Hypatia] Generated template:', result.template?.subject, 'template_id:', result.template_id);
 
-    return { success: true, template: result.template };
+    return { success: true, template: result.template, template_id: result.template_id };
   } catch (error) {
     console.error('[Hypatia] Template generation error:', error);
     return { success: false, error: error.message };
@@ -1425,6 +1578,98 @@ async function handleSendSingleEmail(userId, campaignId, email) {
     };
   } catch (error) {
     console.error('[Hypatia] Send single email error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// =============================================================================
+// CONTACT PREFERENCE ANALYSIS (Groq)
+// Analyzes contact preference text to detect presence of key categories
+// =============================================================================
+
+async function handleAnalyzeContactPreference(text) {
+  /**
+   * Use Groq's fast LLM to analyze contact preference text.
+   * Returns which categories are present: Location, Job Title, Experience, Education, Industry, Skills
+   */
+  if (!text || text.trim().length < 3) {
+    return {
+      success: true,
+      categories: {
+        location: false,
+        job_title: false,
+        experience: false,
+        education: false,
+        industry: false,
+        skills: false
+      }
+    };
+  }
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CONFIG.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: `You analyze contact preference descriptions to identify which targeting categories are mentioned.
+
+Respond ONLY with a JSON object with these exact keys, each true or false:
+- location: geographic location, city, region, country mentioned
+- job_title: specific job titles, roles, or positions mentioned
+- experience: company stage, company size, or company maturity mentioned (e.g., "Series A", "Fortune 500", "startups", "enterprise")
+- education: degrees, schools, certifications, educational background mentioned
+- industry: EXPLICIT mention of a specific sector or vertical (e.g., "healthcare", "fintech", "real estate", "SaaS")
+- skills: specific skills, technologies, or competencies mentioned
+
+Example input: "CTOs at Series A startups in San Francisco"
+Example output: {"location":true,"job_title":true,"experience":false,"education":false,"industry":true,"skills":false}`
+          },
+          {
+            role: 'user',
+            content: text
+          }
+        ],
+        temperature: 0,
+        max_tokens: 100
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Hypatia] Groq API error:', error);
+      throw new Error(`Groq API error: ${error}`);
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+
+    // Parse the JSON response
+    let categories;
+    try {
+      categories = JSON.parse(content);
+    } catch (parseError) {
+      console.warn('[Hypatia] Failed to parse Groq response:', content);
+      categories = {
+        location: false,
+        job_title: false,
+        experience: false,
+        education: false,
+        industry: false,
+        skills: false
+      };
+    }
+
+    console.log('[Hypatia] Contact preference analysis:', categories);
+    return { success: true, categories };
+  } catch (error) {
+    console.error('[Hypatia] Contact preference analysis error:', error);
     return { success: false, error: error.message };
   }
 }
