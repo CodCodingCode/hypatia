@@ -4749,14 +4749,57 @@ function showReviewModal() {
             </svg>
             <span>${emails.length - 1} more similar emails will be sent with personalized names and details</span>
           </div>
+
+          <!-- Instant Respond Checkbox -->
+          <label class="hypatia-instant-respond-checkbox-label" style="
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-top: 16px;
+            cursor: pointer;
+            user-select: none;
+          ">
+            <input
+              type="checkbox"
+              id="hypatia-instant-respond-checkbox-modal"
+              style="
+                width: 20px;
+                height: 20px;
+                cursor: pointer;
+                accent-color: #10b981;
+                flex-shrink: 0;
+              "
+            />
+            <div style="
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+            ">
+              <div style="
+                font-size: 14px;
+                font-weight: 600;
+                color: #374151;
+                line-height: 1.2;
+              ">
+                ⚡ Enable Instant Response
+              </div>
+              <div style="
+                font-size: 12px;
+                color: #6b7280;
+                line-height: 1.3;
+              ">
+                AI will automatically respond when recipients reply
+              </div>
+            </div>
+          </label>
         </div>
 
         <div class="hypatia-review-modal-footer">
           <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-review-cancel">
             Cancel
-          </button>
-          <button class="hypatia-btn hypatia-btn-tertiary" id="hypatia-instant-respond">
-            ⚡ Instant Respond
           </button>
           <button class="hypatia-btn hypatia-btn-primary" id="hypatia-send-all">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -4776,11 +4819,17 @@ function showReviewModal() {
   // Set up event listeners
   document.getElementById('hypatia-close-review-modal')?.addEventListener('click', closeReviewModal);
   document.getElementById('hypatia-review-cancel')?.addEventListener('click', closeReviewModal);
-  document.getElementById('hypatia-instant-respond')?.addEventListener('click', () => {
-    handleInstantRespond(emails);
-    closeReviewModal();
+  document.getElementById('hypatia-send-all')?.addEventListener('click', () => {
+    const instantRespondCheckbox = document.getElementById('hypatia-instant-respond-checkbox-modal');
+    const enableInstantRespond = instantRespondCheckbox?.checked || false;
+
+    if (enableInstantRespond) {
+      handleInstantRespond(emails);
+      closeReviewModal();
+    } else {
+      sendAllEmailsWithProgress(emails);
+    }
   });
-  document.getElementById('hypatia-send-all')?.addEventListener('click', () => sendAllEmailsWithProgress(emails));
 
   // Close on overlay click
   document.getElementById('hypatia-review-modal')?.addEventListener('click', (e) => {
@@ -4951,11 +5000,69 @@ async function handleInstantRespond(emails) {
       if (window.HypatiaAnalytics) {
         window.HypatiaAnalytics.trackEmailBatchStarted(selectedCampaign?.id, emails.length, 'instant_respond');
       }
+
+      // Show success notification
+      showInstantRespondSuccessModal(emails.length, response.data);
     } else {
       console.error('❌ Failed to send emails:', response.error);
+      alert(`Failed to send emails: ${response.error}`);
     }
   } catch (error) {
     console.error('❌ Instant respond failed:', error);
+    alert(`Instant respond failed: ${error.message}`);
+  }
+}
+
+function showInstantRespondSuccessModal(emailCount, data) {
+  const successCount = data?.sent || emailCount;
+
+  const modalHtml = `
+    <div class="hypatia-review-modal-overlay" id="hypatia-instant-respond-results-modal">
+      <div class="hypatia-results-modal">
+        <div class="hypatia-results-icon success">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#137333" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22,4 12,14.01 9,11.01"></polyline>
+          </svg>
+        </div>
+        <h3>⚡ Instant Respond Enabled!</h3>
+
+        <div class="hypatia-results-stats">
+          <div class="hypatia-result-stat success">
+            <span class="hypatia-stat-number">${successCount}</span>
+            <span class="hypatia-stat-label">Emails Sent</span>
+          </div>
+        </div>
+
+        <div class="hypatia-review-info" style="margin: 16px 0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span>AI will automatically respond when recipients reply to these emails</span>
+        </div>
+
+        <button class="hypatia-btn hypatia-btn-primary" id="hypatia-instant-respond-done">
+          View Sent Emails
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  document.getElementById('hypatia-instant-respond-done')?.addEventListener('click', () => {
+    closeInstantRespondResultsModal();
+    // Navigate to Gmail sent folder
+    window.location.href = 'https://mail.google.com/mail/u/0/?tab=rm&ogbl#sent';
+  });
+}
+
+function closeInstantRespondResultsModal() {
+  const modal = document.getElementById('hypatia-instant-respond-results-modal');
+  if (modal) {
+    modal.remove();
   }
 }
 

@@ -56,6 +56,7 @@ class PeopleFinderAgent(BaseAgent):
 
         list_props = {}
         single_conditions = []
+        has_company_filter = False
 
         for prop, value in dsl_mapping.items():
             if value is None:
@@ -64,6 +65,10 @@ class PeopleFinderAgent(BaseAgent):
                 continue
             if isinstance(value, list) and len(value) == 0:
                 continue
+
+            # Track if we have a company filter
+            if prop == "experienceList.companyName":
+                has_company_filter = True
 
             if isinstance(value, bool):
                 single_conditions.append({prop: {"operation": "eq", "value": value}})
@@ -75,6 +80,13 @@ class PeopleFinderAgent(BaseAgent):
                 single_conditions.append(
                     {prop: {"operation": "textcontains", "value": str(value)}}
                 )
+
+        # CRITICAL: Add filter for current company only (endDate is null)
+        # This ensures experienceList.companyName matches CURRENT employer, not past
+        if has_company_filter:
+            single_conditions.append(
+                {"experienceList.endDate": {"operation": "eq", "value": None}}
+            )
 
         if not list_props:
             if not single_conditions:
@@ -386,10 +398,15 @@ class PeopleFinderAgent(BaseAgent):
             List of filter objects for the DSL query
         """
         and_conditions = []
+        has_company_filter = False
 
         for prop, value in dsl_mapping.items():
             if value is None:
                 continue
+
+            # Track if we have a company filter
+            if prop == "experienceList.companyName":
+                has_company_filter = True
 
             if isinstance(value, bool):
                 and_conditions.append({
@@ -407,6 +424,13 @@ class PeopleFinderAgent(BaseAgent):
                 and_conditions.append({
                     prop: {"operation": "textcontains", "value": str(value)}
                 })
+
+        # CRITICAL: Add filter for current company only (endDate is null)
+        # This ensures experienceList.companyName matches CURRENT employer, not past
+        if has_company_filter:
+            and_conditions.append(
+                {"experienceList.endDate": {"operation": "eq", "value": None}}
+            )
 
         if not and_conditions:
             # Default filter if no conditions extracted

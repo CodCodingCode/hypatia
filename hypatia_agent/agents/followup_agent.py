@@ -544,7 +544,7 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
         }
         return tones.get(email_type, '')
 
-    def generate_instant_response(
+    async def generate_instant_response(
         self,
         original_email: str,
         recipient_reply: str,
@@ -565,16 +565,7 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
 
         personalization = personalization or {}
 
-        prompt = f"""You are responding to someone who just replied to your cold outreach email.
-
-Original email you sent:
-{original_email}
-
-Their reply:
-{recipient_reply}
-
-Personalization context:
-{json.dumps(personalization, indent=2) if personalization else 'None'}
+        system_prompt = """You are responding to someone who just replied to your cold outreach email.
 
 Generate a brief, friendly, conversational response that:
 - Acknowledges their reply warmly and authentically
@@ -590,9 +581,18 @@ IMPORTANT: Return ONLY the email body text. Do not include:
 - Subject line
 - Greetings like "Hi [Name]" (they'll see it's a reply)
 - Sign-off or signature (will be added automatically)
-- Any meta-commentary
+- Any meta-commentary"""
+
+        user_prompt = f"""Original email you sent:
+{original_email}
+
+Their reply:
+{recipient_reply}
+
+Personalization context:
+{json.dumps(personalization, indent=2) if personalization else 'None'}
 
 Response:"""
 
-        response = self.llm.generate(prompt)
+        response = await self.llm.complete(system_prompt, user_prompt)
         return response.strip()

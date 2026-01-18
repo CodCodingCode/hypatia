@@ -251,6 +251,8 @@ class ReplyDetectorWorker:
 
     def _send_instant_response(self, user_id: str, original_email: dict, reply_message_id: str):
         """Generate and send instant AI response."""
+        import asyncio
+
         try:
             from hypatia_agent.agents.followup_agent import FollowupAgent
 
@@ -268,13 +270,13 @@ class ReplyDetectorWorker:
                 f"(thread: {thread_id})"
             )
 
-            # Generate AI response
+            # Generate AI response (async)
             followup_agent = FollowupAgent()
-            response_body = followup_agent.generate_instant_response(
+            response_body = asyncio.run(followup_agent.generate_instant_response(
                 original_email=original_email.get("body", ""),
                 recipient_reply=reply_body,
                 personalization={}
-            )
+            ))
 
             # Send via Gmail
             result = self.gmail_service.send_email(
