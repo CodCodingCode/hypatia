@@ -543,3 +543,56 @@ Return ONLY valid JSON with exactly two keys: "subject" and "body". No markdown,
             'followup_3': 'Final graceful attempt',
         }
         return tones.get(email_type, '')
+
+    def generate_instant_response(
+        self,
+        original_email: str,
+        recipient_reply: str,
+        personalization: dict = None
+    ) -> str:
+        """
+        Generate instant AI response to a reply on cold outreach.
+
+        Args:
+            original_email: The original cold outreach email that was sent
+            recipient_reply: The reply received from the recipient
+            personalization: Optional personalization context (name, company, etc.)
+
+        Returns:
+            AI-generated response as a string
+        """
+        import json
+
+        personalization = personalization or {}
+
+        prompt = f"""You are responding to someone who just replied to your cold outreach email.
+
+Original email you sent:
+{original_email}
+
+Their reply:
+{recipient_reply}
+
+Personalization context:
+{json.dumps(personalization, indent=2) if personalization else 'None'}
+
+Generate a brief, friendly, conversational response that:
+- Acknowledges their reply warmly and authentically
+- Answers any questions they asked directly
+- Moves the conversation forward naturally
+- Keeps it concise (2-4 sentences max)
+- Sounds human and authentic (no corporate jargon)
+- Matches a helpful, professional tone
+- If they expressed interest, suggest next steps (call, meeting, etc.)
+- If they asked questions, answer them clearly
+
+IMPORTANT: Return ONLY the email body text. Do not include:
+- Subject line
+- Greetings like "Hi [Name]" (they'll see it's a reply)
+- Sign-off or signature (will be added automatically)
+- Any meta-commentary
+
+Response:"""
+
+        response = self.llm.generate(prompt)
+        return response.strip()

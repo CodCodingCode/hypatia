@@ -181,6 +181,10 @@ class FollowupConfigUpdate(BaseModel):
     enabled: Optional[bool] = None
 
 
+class InstantRespondUpdate(BaseModel):
+    instant_respond_enabled: bool
+
+
 class GmailTokenUpdate(BaseModel):
     access_token: str
     refresh_token: Optional[str] = None
@@ -232,6 +236,7 @@ class SendBatchRequest(BaseModel):
     user_id: str
     campaign_id: str
     emails: list[EmailToSend]
+    instant_respond_enabled: bool = False
 
 
 class CreateCampaignRequest(BaseModel):
@@ -603,7 +608,8 @@ async def send_email_batch(request: SendBatchRequest):
                 'subject': email.subject,
                 'recipient_to': email.recipient_email,
                 'body': email.body,
-                'sent_at': 'now()'
+                'sent_at': 'now()',
+                'instant_respond_enabled': request.instant_respond_enabled
             }
 
             try:
@@ -1022,6 +1028,21 @@ async def update_followup_config(campaign_id: str, config: FollowupConfigUpdate)
         raise HTTPException(status_code=500, detail="Failed to update configuration")
 
     return {"success": True, "config": result}
+
+
+@app.patch("/campaigns/{campaign_id}/instant-respond")
+async def update_instant_respond(campaign_id: str, config: InstantRespondUpdate):
+    """Enable or disable instant AI responses for all emails in a campaign."""
+    result = supabase_request(
+        f"campaigns?id=eq.{campaign_id}",
+        method="PATCH",
+        body={"instant_respond_enabled": config.instant_respond_enabled}
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    return {"success": True, "instant_respond_enabled": config.instant_respond_enabled}
 
 
 # -----------------------------------------------------------------------------

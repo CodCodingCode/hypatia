@@ -167,18 +167,33 @@ class ReplyDetectorWorker:
 
                     # Only process INBOX messages (replies to our sent emails)
                     if thread_id and "INBOX" in label_ids:
-                        # Check if this thread has pending followups
-                        cancelled = self.followup_service.cancel_followups_for_thread(
-                            thread_id=thread_id,
-                            reason="reply_detected",
+                        # Check if this thread has instant_respond enabled
+                        instant_respond_email = self._check_instant_respond_thread(
+                            user_id, thread_id
                         )
 
-                        if cancelled > 0:
-                            total_cancelled += cancelled
+                        if instant_respond_email:
+                            # INSTANT RESPOND: Generate and send AI response
                             logger.info(
-                                f"Cancelled {cancelled} followups for thread {thread_id} "
-                                f"(user {user_id})"
+                                f"Thread {thread_id} has instant respond enabled, "
+                                f"generating AI response"
                             )
+                            self._send_instant_response(
+                                user_id, instant_respond_email, msg.get("id")
+                            )
+                        else:
+                            # EXISTING LOGIC: Cancel pending followups
+                            cancelled = self.followup_service.cancel_followups_for_thread(
+                                thread_id=thread_id,
+                                reason="reply_detected",
+                            )
+
+                            if cancelled > 0:
+                                total_cancelled += cancelled
+                                logger.info(
+                                    f"Cancelled {cancelled} followups for thread {thread_id} "
+                                    f"(user {user_id})"
+                                )
 
             # Update stored history_id
             self.supabase.request(
@@ -199,6 +214,138 @@ class ReplyDetectorWorker:
         except Exception as e:
             logger.exception(f"Error processing message: {e}")
             return False  # Nack for retry
+
+    def _check_instant_respond_thread(self, user_id: str, thread_id: str):
+        """Check if this thread has instant respond enabled (via email or campaign)."""
+        try:
+            # First check if any email in this thread has instant_respond_enabled directly
+            result = self.supabase.request(
+                f"sent_emails?user_id=eq.{user_id}&thread_id=eq.{thread_id}"
+                f"&instant_respond_enabled=eq.true&select=id,recipient_to,subject,body"
+            )
+
+            if result and len(result) > 0:
+                return result[0]
+
+            # If not, check if the email is part of a campaign with instant_respond_enabled
+            # Join sent_emails -> email_campaigns -> campaigns
+            campaign_result = self.supabase.request(
+                f"sent_emails?user_id=eq.{user_id}&thread_id=eq.{thread_id}"
+                f"&select=id,recipient_to,subject,body,email_campaigns(campaign_id,campaigns(instant_respond_enabled))"
+            )
+
+            if campaign_result and len(campaign_result) > 0:
+                email_data = campaign_result[0]
+                # Check if any associated campaign has instant_respond_enabled
+                email_campaigns = email_data.get("email_campaigns", [])
+                for ec in email_campaigns:
+                    campaign = ec.get("campaigns")
+                    if campaign and campaign.get("instant_respond_enabled"):
+                        logger.info(f"Thread {thread_id} is in campaign with instant respond enabled")
+                        return email_data
+
+            return None
+        except Exception as e:
+            logger.error(f"Error checking instant respond thread: {e}")
+            return None
+
+    def _send_instant_response(self, user_id: str, original_email: dict, reply_message_id: str):
+        """Generate and send instant AI response."""
+        try:
+            from hypatia_agent.agents.followup_agent import FollowupAgent
+
+            # Get full reply message details
+            full_message = self.gmail_service.get_message(user_id, reply_message_id)
+
+            # Extract reply details
+            reply_from = self._extract_sender_email(full_message)
+            reply_subject = self._extract_subject(full_message)
+            reply_body = self._extract_body(full_message)
+            thread_id = full_message.get("threadId")
+
+            logger.info(
+                f"Generating instant response to {reply_from} "
+                f"(thread: {thread_id})"
+            )
+
+            # Generate AI response
+            followup_agent = FollowupAgent()
+            response_body = followup_agent.generate_instant_response(
+                original_email=original_email.get("body", ""),
+                recipient_reply=reply_body,
+                personalization={}
+            )
+
+            # Send via Gmail
+            result = self.gmail_service.send_email(
+                user_id=user_id,
+                to=reply_from,
+                subject=f"Re: {reply_subject}" if not reply_subject.startswith("Re:") else reply_subject,
+                body=response_body,
+                thread_id=thread_id
+            )
+
+            # Track in database
+            self.supabase.request(
+                "sent_emails",
+                method="POST",
+                body={
+                    "user_id": user_id,
+                    "gmail_id": result.get("gmail_id"),
+                    "thread_id": thread_id,
+                    "subject": result.get("subject", reply_subject),
+                    "recipient_to": reply_from,
+                    "body": response_body,
+                    "sent_at": "now()",
+                    "instant_respond_enabled": False,  # Don't auto-respond to our auto-response
+                }
+            )
+
+            logger.info(f"✅ Sent instant response to {reply_from} in thread {thread_id}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to send instant response: {e}")
+
+    def _extract_sender_email(self, message: dict) -> str:
+        """Extract sender email from Gmail message."""
+        headers = message.get("payload", {}).get("headers", [])
+        for header in headers:
+            if header["name"].lower() == "from":
+                # Parse "Name <email@example.com>" format
+                from_value = header["value"]
+                if "<" in from_value and ">" in from_value:
+                    return from_value.split("<")[1].split(">")[0]
+                return from_value
+        return ""
+
+    def _extract_subject(self, message: dict) -> str:
+        """Extract subject from Gmail message."""
+        headers = message.get("payload", {}).get("headers", [])
+        for header in headers:
+            if header["name"].lower() == "subject":
+                return header["value"]
+        return ""
+
+    def _extract_body(self, message: dict) -> str:
+        """Extract plain text body from Gmail message."""
+        payload = message.get("payload", {})
+
+        # Try to get plain text part
+        if "parts" in payload:
+            for part in payload["parts"]:
+                if part.get("mimeType") == "text/plain":
+                    data = part.get("body", {}).get("data", "")
+                    if data:
+                        import base64
+                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+
+        # Fall back to body.data if no parts
+        data = payload.get("body", {}).get("data", "")
+        if data:
+            import base64
+            return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+
+        return ""
 
     def run(self):
         """Start the subscriber (blocking)."""

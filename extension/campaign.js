@@ -174,26 +174,77 @@ function getCampaignDetailScreen(campaign) {
             </div>
           </div>
 
-          <!-- Send Card -->
-          <div class="hypatia-action-card ${!templateExists || leadsCount === 0 ? 'hypatia-action-disabled' : ''}" id="hypatia-goto-send">
-            <div class="hypatia-action-card-icon hypatia-icon-send">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-              </svg>
-            </div>
-            <div class="hypatia-action-card-content">
-              <div class="hypatia-action-card-title">Send Emails</div>
-              <div class="hypatia-action-card-desc">Review and send to all your leads</div>
-              <div class="hypatia-action-card-status">
-                ${sentCount > 0 ? `<span class="hypatia-status-badge hypatia-status-sent">${sentCount} sent</span>` : '<span class="hypatia-status-badge hypatia-status-pending">Ready to send</span>'}
+          <!-- Send Card with Instant Response Toggle -->
+          <div style="display: flex; gap: 12px; align-items: stretch;">
+            <!-- Send Emails Card -->
+            <div class="hypatia-action-card ${!templateExists || leadsCount === 0 ? 'hypatia-action-disabled' : ''}" id="hypatia-goto-send" style="flex: 1;">
+              <div class="hypatia-action-card-icon hypatia-icon-send">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"/>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </div>
+              <div class="hypatia-action-card-content">
+                <div class="hypatia-action-card-title">Send Emails</div>
+                <div class="hypatia-action-card-desc">Review and send to all your leads</div>
+                <div class="hypatia-action-card-status">
+                  ${sentCount > 0 ? `<span class="hypatia-status-badge hypatia-status-sent">${sentCount} sent</span>` : '<span class="hypatia-status-badge hypatia-status-pending">Ready to send</span>'}
+                </div>
+              </div>
+              <div class="hypatia-action-card-arrow">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
               </div>
             </div>
-            <div class="hypatia-action-card-arrow">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 18l6-6-6-6"/>
-              </svg>
-            </div>
+
+            <!-- Instant Response Checkbox -->
+            <label class="hypatia-instant-respond-toggle" id="hypatia-instant-respond-toggle" style="
+              background: white;
+              border: 1px solid #e5e7eb;
+              border-radius: 12px;
+              padding: 20px;
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              cursor: pointer;
+              transition: all 0.2s;
+              user-select: none;
+            ">
+              <input
+                type="checkbox"
+                id="hypatia-instant-respond-checkbox"
+                ${campaign.instant_respond_enabled ? 'checked' : ''}
+                style="
+                  width: 20px;
+                  height: 20px;
+                  cursor: pointer;
+                  accent-color: #10b981;
+                  flex-shrink: 0;
+                "
+              />
+              <div style="
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+              ">
+                <div style="
+                  font-size: 14px;
+                  font-weight: 600;
+                  color: #374151;
+                  line-height: 1.2;
+                ">
+                  Instant Response
+                </div>
+                <div style="
+                  font-size: 12px;
+                  color: #6b7280;
+                  line-height: 1.3;
+                ">
+                  Auto-reply when leads respond
+                </div>
+              </div>
+            </label>
           </div>
 
           <!-- Sent/Tracking Card -->
@@ -285,6 +336,63 @@ function attachCampaignDetailListeners() {
         handleGotoSent(currentCampaign);
       }
     });
+  }
+
+  // Instant Response Toggle
+  const instantRespondCheckbox = document.getElementById('hypatia-instant-respond-checkbox');
+  const instantRespondToggle = document.getElementById('hypatia-instant-respond-toggle');
+
+  if (instantRespondCheckbox && instantRespondToggle && currentCampaign) {
+    // Toggle checkbox when clicking the container
+    instantRespondToggle.addEventListener('click', (e) => {
+      if (e.target !== instantRespondCheckbox) {
+        instantRespondCheckbox.checked = !instantRespondCheckbox.checked;
+      }
+      handleInstantRespondToggle(currentCampaign.id, instantRespondCheckbox.checked);
+    });
+
+    // Handle direct checkbox clicks
+    instantRespondCheckbox.addEventListener('change', (e) => {
+      e.stopPropagation();
+      handleInstantRespondToggle(currentCampaign.id, e.target.checked);
+    });
+  }
+}
+
+// Handle instant response toggle
+async function handleInstantRespondToggle(campaignId, enabled) {
+  try {
+    const API_BASE = 'http://localhost:8000';
+    const response = await fetch(`${API_BASE}/campaigns/${campaignId}/instant-respond`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        instant_respond_enabled: enabled
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to update instant response setting');
+    }
+
+    await response.json();
+
+    // Update the current campaign object
+    if (currentCampaign) {
+      currentCampaign.instant_respond_enabled = enabled;
+    }
+
+    console.log(`✅ Instant response ${enabled ? 'enabled' : 'disabled'} for campaign ${campaignId}`);
+
+  } catch (error) {
+    console.error('❌ Error toggling instant response:', error);
+    // Revert checkbox on error
+    const checkbox = document.getElementById('hypatia-instant-respond-checkbox');
+    if (checkbox) {
+      checkbox.checked = !enabled;
+    }
   }
 }
 

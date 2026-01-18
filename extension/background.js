@@ -612,6 +612,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'sendWithInstantRespond') {
+    handleSendWithInstantRespond(request.userId, request.campaignId, request.emails)
+      .then(sendResponse);
+    return true;
+  }
+
   if (request.action === 'analyzeContactPreference') {
     handleAnalyzeContactPreference(request.text)
       .then(sendResponse);
@@ -1735,6 +1741,48 @@ async function handleSendSingleEmail(userId, campaignId, email) {
     };
   } catch (error) {
     console.error('[Hypatia] Send single email error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleSendWithInstantRespond(userId, campaignId, emails) {
+  /**
+   * Send emails with instant respond enabled.
+   * This enables AI auto-responses when recipients reply to cold outreach.
+   */
+  try {
+    // First ensure Gmail token is fresh
+    await syncGmailTokenToBackend(userId);
+
+    const response = await fetch(`${CONFIG.API_URL}/emails/send-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        campaign_id: campaignId,
+        emails: emails,
+        instant_respond_enabled: true  // NEW FLAG
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Hypatia] Send with instant respond failed:', error);
+
+      // Check for auth errors
+      if (response.status === 401) {
+        return { success: false, error: 'Gmail authentication expired. Please sign out and sign back in.', authError: true };
+      }
+
+      throw new Error(`Send failed: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('[Hypatia] Send with instant respond result:', { sent: result.sent, failed: result.failed });
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('[Hypatia] Send with instant respond error:', error);
     return { success: false, error: error.message };
   }
 }

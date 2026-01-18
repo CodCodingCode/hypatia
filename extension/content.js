@@ -4755,6 +4755,9 @@ function showReviewModal() {
           <button class="hypatia-btn hypatia-btn-secondary" id="hypatia-review-cancel">
             Cancel
           </button>
+          <button class="hypatia-btn hypatia-btn-tertiary" id="hypatia-instant-respond">
+            ⚡ Instant Respond
+          </button>
           <button class="hypatia-btn hypatia-btn-primary" id="hypatia-send-all">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -4773,6 +4776,10 @@ function showReviewModal() {
   // Set up event listeners
   document.getElementById('hypatia-close-review-modal')?.addEventListener('click', closeReviewModal);
   document.getElementById('hypatia-review-cancel')?.addEventListener('click', closeReviewModal);
+  document.getElementById('hypatia-instant-respond')?.addEventListener('click', () => {
+    handleInstantRespond(emails);
+    closeReviewModal();
+  });
   document.getElementById('hypatia-send-all')?.addEventListener('click', () => sendAllEmailsWithProgress(emails));
 
   // Close on overlay click
@@ -4904,6 +4911,51 @@ function closeResultsModal() {
   const modal = document.getElementById('hypatia-results-modal');
   if (modal) {
     modal.remove();
+  }
+}
+
+async function handleInstantRespond(emails) {
+  try {
+    // Get user info
+    const status = await chrome.runtime.sendMessage({ action: 'checkOnboardingStatus' });
+    if (!status.userId) {
+      alert('Error: Not logged in. Please refresh and try again.');
+      return;
+    }
+
+    console.log('Sending emails with instant respond enabled...');
+
+    // Send message to background script
+    const response = await chrome.runtime.sendMessage({
+      action: 'sendWithInstantRespond',
+      userId: status.userId,
+      campaignId: selectedCampaign?.id,
+      emails: emails.map(email => ({
+        recipient_email: email.lead.email,
+        recipient_name: email.lead.name,
+        subject: email.subject,
+        body: email.body,
+        personalization_data: {
+          name: email.lead.name,
+          company: email.lead.company,
+          title: email.lead.title,
+          location: email.lead.location
+        }
+      }))
+    });
+
+    if (response.success) {
+      console.log('✅ Emails sent with instant respond enabled!');
+
+      // Track analytics
+      if (window.HypatiaAnalytics) {
+        window.HypatiaAnalytics.trackEmailBatchStarted(selectedCampaign?.id, emails.length, 'instant_respond');
+      }
+    } else {
+      console.error('❌ Failed to send emails:', response.error);
+    }
+  } catch (error) {
+    console.error('❌ Instant respond failed:', error);
   }
 }
 

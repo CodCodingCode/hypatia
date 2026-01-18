@@ -33,8 +33,21 @@ _load_env()
 
 GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1"
 GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+
+# Load OAuth credentials from credentials.json
+def _load_credentials():
+    """Load Google OAuth credentials from credentials.json."""
+    credentials_path = Path(__file__).parent.parent.parent / "credentials.json"
+    if credentials_path.exists():
+        with open(credentials_path) as f:
+            creds = json.load(f)
+            # Handle both "web" and "installed" credential types
+            creds_data = creds.get("web") or creds.get("installed", {})
+            return creds_data.get("client_id", ""), creds_data.get("client_secret", "")
+    # Fallback to environment variables
+    return os.environ.get("GOOGLE_CLIENT_ID", ""), os.environ.get("GOOGLE_CLIENT_SECRET", "")
+
+GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET = _load_credentials()
 
 
 class GmailServiceError(Exception):
@@ -136,8 +149,17 @@ class GmailService:
                         user_id, refresh_token
                     )
                 else:
+                    # Debug: Show why refresh failed
+                    missing = []
+                    if not refresh_token:
+                        missing.append("refresh_token")
+                    if not GOOGLE_CLIENT_ID:
+                        missing.append("GOOGLE_CLIENT_ID")
+                    if not GOOGLE_CLIENT_SECRET:
+                        missing.append("GOOGLE_CLIENT_SECRET")
                     raise TokenExpiredError(
-                        f"Token expired for user {user_id} and cannot be refreshed"
+                        f"Token expired for user {user_id} and cannot be refreshed. "
+                        f"Missing: {', '.join(missing)}"
                     )
 
         return access_token
