@@ -1,0 +1,17 @@
+{
+  "name": "hypatia-extension",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "dev": "node esbuild.config.js --watch"
+  },
+  "dependencies": {
+    "preact": "^10.19.3",
+    "@preact/signals": "^1.2.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
+}

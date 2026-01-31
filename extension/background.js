@@ -623,6 +623,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(sendResponse);
     return true;
   }
+
+  if (request.action === 'analyzeChatIntent') {
+    handleAnalyzeChatIntent(request.text)
+      .then(sendResponse);
+    return true;
+  }
 });
 
 // =============================================================================
@@ -1880,6 +1886,97 @@ Example output: {"location":false,"job_title":true,"experience":false,"education
     return { success: true, categories };
   } catch (error) {
     console.error('[Hypatia] Contact preference analysis error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// =============================================================================
+// CHAT INTENT ANALYSIS (Groq)
+// Analyzes chat input to detect: who to contact, ask/purpose, template mention
+// =============================================================================
+
+async function handleAnalyzeChatIntent(text) {
+  /**
+   * Use Groq's fast LLM to analyze chat input for intent categories.
+   * Returns which categories are present: who_to_contact, ask, template
+   */
+  if (!text || text.trim().length < 3) {
+    return {
+      success: true,
+      categories: {
+        who_to_contact: false,
+        ask: false,
+        template: false
+      }
+    };
+  }
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CONFIG.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: `You analyze user input to identify intent categories for an email outreach assistant. Multiple categories can be true at once.
+
+Respond ONLY with a JSON object with these exact keys, each true or false:
+- who_to_contact: user mentions a specific person, role, job title, company, or target audience to contact (e.g., "CEO", "VPs at startups", "John Smith", "founders", "sales team")
+- ask: user mentions a purpose, reason, goal, or what they want to achieve from the contact (e.g., "schedule a demo", "get feedback", "partnership", "hire", "sell", "introduce")
+- template: user mentions using a template, format, style, or references a previous email pattern (e.g., "use the intro template", "cold outreach format", "follow-up style", "like my last campaign")
+
+IMPORTANT: Mark ALL categories that are mentioned. Be generous in detection - if the intent seems present, mark it true.
+
+Example input: "Contact the VP of Sales"
+Example output: {"who_to_contact":true,"ask":false,"template":false}
+
+Example input: "I want to schedule a demo with CTOs"
+Example output: {"who_to_contact":true,"ask":true,"template":false}
+
+Example input: "Use the follow-up template to reach out to investors about funding"
+Example output: {"who_to_contact":true,"ask":true,"template":true}`
+          },
+          {
+            role: 'user',
+            content: text
+          }
+        ],
+        temperature: 0,
+        max_tokens: 100
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Hypatia] Groq API error:', error);
+      throw new Error(`Groq API error: ${error}`);
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+
+    // Parse the JSON response
+    let categories;
+    try {
+      categories = JSON.parse(content);
+    } catch (parseError) {
+      console.warn('[Hypatia] Failed to parse Groq response:', content);
+      categories = {
+        who_to_contact: false,
+        ask: false,
+        template: false
+      };
+    }
+
+    console.log('[Hypatia] Chat intent analysis:', categories);
+    return { success: true, categories };
+  } catch (error) {
+    console.error('[Hypatia] Chat intent analysis error:', error);
     return { success: false, error: error.message };
   }
 }

@@ -1,0 +1,219 @@
+/* =============================================================================
+   HYPATIA DESIGN TOKENS
+   Gmail-native design system with auto light/dark theme support
+   ============================================================================= */
+
+:root,
+[data-hypatia-theme="light"] {
+  /* Background Colors */
+  --hypatia-bg-primary: #ffffff;
+  --hypatia-bg-secondary: #f8f9fa;
+  --hypatia-bg-tertiary: #f1f3f4;
+  --hypatia-bg-elevated: #ffffff;
+  --hypatia-bg-hover: rgba(0, 0, 0, 0.04);
+  --hypatia-bg-active: rgba(0, 0, 0, 0.08);
+
+  /* Text Colors */
+  --hypatia-text-primary: #202124;
+  --hypatia-text-secondary: #5f6368;
+  --hypatia-text-tertiary: #80868b;
+  --hypatia-text-disabled: #9aa0a6;
+  --hypatia-text-inverse: #ffffff;
+
+  /* Border Colors */
+  --hypatia-border-default: #dadce0;
+  --hypatia-border-light: #e8eaed;
+  --hypatia-border-focus: #1a73e8;
+
+  /* Accent Colors - Gmail Blue */
+  --hypatia-accent-primary: #1a73e8;
+  --hypatia-accent-primary-hover: #1967d2;
+  --hypatia-accent-primary-active: #185abc;
+  --hypatia-accent-secondary: #e8f0fe;
+  --hypatia-accent-secondary-hover: #d2e3fc;
+
+  /* Status Colors */
+  --hypatia-success: #137333;
+  --hypatia-success-bg: #e6f4ea;
+  --hypatia-success-border: #34a853;
+
+  --hypatia-warning: #b06000;
+  --hypatia-warning-bg: #fef7e0;
+  --hypatia-warning-border: #f9ab00;
+
+  --hypatia-error: #c5221f;
+  --hypatia-error-bg: #fce8e6;
+  --hypatia-error-border: #ea4335;
+
+  --hypatia-info: #1a73e8;
+  --hypatia-info-bg: #e8f0fe;
+  --hypatia-info-border: #4285f4;
+
+  /* Shadows */
+  --hypatia-shadow-xs: 0 1px 2px rgba(60, 64, 67, 0.1);
+  --hypatia-shadow-sm: 0 1px 3px rgba(60, 64, 67, 0.15);
+  --hypatia-shadow-md: 0 2px 6px rgba(60, 64, 67, 0.15), 0 1px 2px rgba(60, 64, 67, 0.1);
+  --hypatia-shadow-lg: 0 4px 12px rgba(60, 64, 67, 0.15), 0 2px 4px rgba(60, 64, 67, 0.1);
+  --hypatia-shadow-xl: 0 8px 24px rgba(60, 64, 67, 0.2), 0 4px 8px rgba(60, 64, 67, 0.1);
+
+  /* Focus Ring */
+  --hypatia-focus-ring: 0 0 0 2px var(--hypatia-bg-primary), 0 0 0 4px var(--hypatia-accent-primary);
+}
+
+/* Dark Theme - Gmail Dark Mode */
+[data-hypatia-theme="dark"] {
+  /* Background Colors */
+  --hypatia-bg-primary: #1f1f1f;
+  --hypatia-bg-secondary: #2d2d2d;
+  --hypatia-bg-tertiary: #3c3c3c;
+  --hypatia-bg-elevated: #2d2d2d;
+  --hypatia-bg-hover: rgba(255, 255, 255, 0.08);
+  --hypatia-bg-active: rgba(255, 255, 255, 0.12);
+
+  /* Text Colors */
+  --hypatia-text-primary: #e8eaed;
+  --hypatia-text-secondary: #9aa0a6;
+  --hypatia-text-tertiary: #80868b;
+  --hypatia-text-disabled: #5f6368;
+  --hypatia-text-inverse: #202124;
+
+  /* Border Colors */
+  --hypatia-border-default: #5f6368;
+  --hypatia-border-light: #3c4043;
+  --hypatia-border-focus: #8ab4f8;
+
+  /* Accent Colors - Gmail Blue (Dark) */
+  --hypatia-accent-primary: #8ab4f8;
+  --hypatia-accent-primary-hover: #aecbfa;
+  --hypatia-accent-primary-active: #c6dafc;
+  --hypatia-accent-secondary: #394457;
+  --hypatia-accent-secondary-hover: #4a5568;
+
+  /* Status Colors (Dark) */
+  --hypatia-success: #81c995;
+  --hypatia-success-bg: #1e3a2f;
+  --hypatia-success-border: #34a853;
+
+  --hypatia-warning: #fdd663;
+  --hypatia-warning-bg: #3d3523;
+  --hypatia-warning-border: #f9ab00;
+
+  --hypatia-error: #f28b82;
+  --hypatia-error-bg: #3c2020;
+  --hypatia-error-border: #ea4335;
+
+  --hypatia-info: #8ab4f8;
+  --hypatia-info-bg: #394457;
+  --hypatia-info-border: #4285f4;
+
+  /* Shadows (Dark) */
+  --hypatia-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --hypatia-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --hypatia-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --hypatia-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --hypatia-shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+
+  /* Focus Ring */
+  --hypatia-focus-ring: 0 0 0 2px var(--hypatia-bg-primary), 0 0 0 4px var(--hypatia-accent-primary);
+}
+
+/* =============================================================================
+   TYPOGRAPHY
+   ============================================================================= */
+
+:root {
+  /* Font Families */
+  --hypatia-font-sans: 'Google Sans', Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --hypatia-font-mono: 'Roboto Mono', 'SF Mono', Monaco, Consolas, monospace;
+
+  /* Font Sizes */
+  --hypatia-text-xs: 11px;
+  --hypatia-text-sm: 12px;
+  --hypatia-text-base: 14px;
+  --hypatia-text-lg: 16px;
+  --hypatia-text-xl: 18px;
+  --hypatia-text-2xl: 20px;
+  --hypatia-text-3xl: 24px;
+  --hypatia-text-4xl: 28px;
+
+  /* Line Heights */
+  --hypatia-leading-tight: 1.2;
+  --hypatia-leading-snug: 1.375;
+  --hypatia-leading-normal: 1.5;
+  --hypatia-leading-relaxed: 1.625;
+
+  /* Font Weights */
+  --hypatia-font-normal: 400;
+  --hypatia-font-medium: 500;
+  --hypatia-font-semibold: 600;
+  --hypatia-font-bold: 700;
+
+  /* Letter Spacing */
+  --hypatia-tracking-tight: -0.01em;
+  --hypatia-tracking-normal: 0;
+  --hypatia-tracking-wide: 0.01em;
+}
+
+/* =============================================================================
+   SPACING
+   Gmail uses 4px base unit
+   ============================================================================= */
+
+:root {
+  --hypatia-space-0: 0;
+  --hypatia-space-1: 4px;
+  --hypatia-space-2: 8px;
+  --hypatia-space-3: 12px;
+  --hypatia-space-4: 16px;
+  --hypatia-space-5: 20px;
+  --hypatia-space-6: 24px;
+  --hypatia-space-8: 32px;
+  --hypatia-space-10: 40px;
+  --hypatia-space-12: 48px;
+  --hypatia-space-16: 64px;
+}
+
+/* =============================================================================
+   BORDER RADIUS
+   ============================================================================= */
+
+:root {
+  --hypatia-radius-none: 0;
+  --hypatia-radius-sm: 4px;
+  --hypatia-radius-md: 8px;
+  --hypatia-radius-lg: 12px;
+  --hypatia-radius-xl: 16px;
+  --hypatia-radius-2xl: 24px;
+  --hypatia-radius-full: 9999px;
+}
+
+/* =============================================================================
+   TRANSITIONS
+   ============================================================================= */
+
+:root {
+  --hypatia-duration-fast: 100ms;
+  --hypatia-duration-base: 150ms;
+  --hypatia-duration-slow: 200ms;
+  --hypatia-duration-slower: 300ms;
+
+  --hypatia-ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --hypatia-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --hypatia-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --hypatia-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* =============================================================================
+   Z-INDEX SCALE
+   ============================================================================= */
+
+:root {
+  --hypatia-z-dropdown: 1000;
+  --hypatia-z-sticky: 1020;
+  --hypatia-z-fixed: 1030;
+  --hypatia-z-modal-backdrop: 1040;
+  --hypatia-z-modal: 1050;
+  --hypatia-z-popover: 1060;
+  --hypatia-z-tooltip: 1070;
+  --hypatia-z-max: 2147483647;
+}

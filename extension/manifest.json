@@ -35,9 +35,16 @@
   "content_scripts": [
     {
       "matches": ["https://mail.google.com/*"],
-      "js": ["config.js", "analytics.js", "onboarding.js", "content.js"],
-      "css": ["styles.css"],
+      "js": ["config.js", "analytics.js", "onboarding.js", "content.js", "dist/content.bundle.js"],
+      "css": ["styles.css", "dist/content.bundle.css"],
       "run_at": "document_idle"
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": ["https://mail.google.com/*"]
     }
   ]
 }

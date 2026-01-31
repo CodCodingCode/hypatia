@@ -1,0 +1,703 @@
+/* =============================================================================
+   HYPATIA COMPONENT STYLES
+   Gmail-native UI components
+   ============================================================================= */
+
+/* =============================================================================
+   BASE RESET
+   ============================================================================= */
+
+.hypatia-root,
+.hypatia-root *,
+.hypatia-root *::before,
+.hypatia-root *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.hypatia-root {
+  font-family: var(--hypatia-font-sans);
+  font-size: var(--hypatia-text-base);
+  line-height: var(--hypatia-leading-normal);
+  color: var(--hypatia-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* =============================================================================
+   BUTTON COMPONENT
+   ============================================================================= */
+
+.hypatia-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hypatia-space-2);
+  font-family: var(--hypatia-font-sans);
+  font-weight: var(--hypatia-font-medium);
+  border: none;
+  cursor: pointer;
+  transition: all var(--hypatia-duration-base) var(--hypatia-ease-default);
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.hypatia-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.hypatia-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--hypatia-focus-ring);
+}
+
+/* Button Sizes */
+.hypatia-btn--sm {
+  height: 28px;
+  padding: 0 var(--hypatia-space-3);
+  font-size: var(--hypatia-text-sm);
+  border-radius: var(--hypatia-radius-sm);
+}
+
+.hypatia-btn--md {
+  height: 36px;
+  padding: 0 var(--hypatia-space-4);
+  font-size: var(--hypatia-text-base);
+  border-radius: var(--hypatia-radius-md);
+}
+
+.hypatia-btn--lg {
+  height: 44px;
+  padding: 0 var(--hypatia-space-6);
+  font-size: var(--hypatia-text-lg);
+  border-radius: var(--hypatia-radius-md);
+}
+
+/* Button Variants */
+.hypatia-btn--primary {
+  background: var(--hypatia-accent-primary);
+  color: var(--hypatia-text-inverse);
+}
+
+.hypatia-btn--primary:hover:not(:disabled) {
+  background: var(--hypatia-accent-primary-hover);
+}
+
+.hypatia-btn--primary:active:not(:disabled) {
+  background: var(--hypatia-accent-primary-active);
+}
+
+.hypatia-btn--secondary {
+  background: transparent;
+  color: var(--hypatia-accent-primary);
+  border: 1px solid var(--hypatia-border-default);
+}
+
+.hypatia-btn--secondary:hover:not(:disabled) {
+  background: var(--hypatia-bg-hover);
+  border-color: var(--hypatia-accent-primary);
+}
+
+.hypatia-btn--ghost {
+  background: transparent;
+  color: var(--hypatia-text-secondary);
+}
+
+.hypatia-btn--ghost:hover:not(:disabled) {
+  background: var(--hypatia-bg-hover);
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-btn--danger {
+  background: var(--hypatia-error);
+  color: var(--hypatia-text-inverse);
+}
+
+.hypatia-btn--danger:hover:not(:disabled) {
+  background: #b31412;
+}
+
+/* Full Width */
+.hypatia-btn--full {
+  width: 100%;
+}
+
+/* Icon Only */
+.hypatia-btn--icon {
+  padding: 0;
+  width: 36px;
+}
+
+.hypatia-btn--icon.hypatia-btn--sm {
+  width: 28px;
+}
+
+.hypatia-btn--icon.hypatia-btn--lg {
+  width: 44px;
+}
+
+/* =============================================================================
+   INPUT COMPONENT
+   ============================================================================= */
+
+.hypatia-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hypatia-space-1);
+}
+
+.hypatia-input-label {
+  font-size: var(--hypatia-text-sm);
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--hypatia-space-3);
+  font-family: var(--hypatia-font-sans);
+  font-size: var(--hypatia-text-base);
+  color: var(--hypatia-text-primary);
+  background: var(--hypatia-bg-primary);
+  border: 1px solid var(--hypatia-border-default);
+  border-radius: var(--hypatia-radius-md);
+  transition: border-color var(--hypatia-duration-base) var(--hypatia-ease-default),
+              box-shadow var(--hypatia-duration-base) var(--hypatia-ease-default);
+}
+
+.hypatia-input::placeholder {
+  color: var(--hypatia-text-tertiary);
+}
+
+.hypatia-input:hover:not(:disabled) {
+  border-color: var(--hypatia-text-tertiary);
+}
+
+.hypatia-input:focus {
+  outline: none;
+  border-color: var(--hypatia-accent-primary);
+  box-shadow: 0 0 0 2px var(--hypatia-accent-secondary);
+}
+
+.hypatia-input:disabled {
+  background: var(--hypatia-bg-tertiary);
+  cursor: not-allowed;
+}
+
+.hypatia-input--error {
+  border-color: var(--hypatia-error);
+}
+
+.hypatia-input--error:focus {
+  box-shadow: 0 0 0 2px var(--hypatia-error-bg);
+}
+
+.hypatia-input-error {
+  font-size: var(--hypatia-text-sm);
+  color: var(--hypatia-error);
+}
+
+/* Textarea */
+.hypatia-textarea {
+  min-height: 100px;
+  padding: var(--hypatia-space-3);
+  resize: vertical;
+  line-height: var(--hypatia-leading-relaxed);
+}
+
+/* =============================================================================
+   CARD COMPONENT
+   ============================================================================= */
+
+.hypatia-card {
+  background: var(--hypatia-bg-primary);
+  border: 1px solid var(--hypatia-border-light);
+  border-radius: var(--hypatia-radius-lg);
+  overflow: hidden;
+  transition: box-shadow var(--hypatia-duration-base) var(--hypatia-ease-default),
+              border-color var(--hypatia-duration-base) var(--hypatia-ease-default);
+}
+
+.hypatia-card--interactive {
+  cursor: pointer;
+}
+
+.hypatia-card--interactive:hover {
+  border-color: var(--hypatia-border-default);
+  box-shadow: var(--hypatia-shadow-md);
+}
+
+.hypatia-card--interactive:active {
+  box-shadow: var(--hypatia-shadow-sm);
+}
+
+.hypatia-card--selected {
+  border-color: var(--hypatia-accent-primary);
+  box-shadow: 0 0 0 1px var(--hypatia-accent-primary);
+}
+
+.hypatia-card__header {
+  padding: var(--hypatia-space-4);
+  border-bottom: 1px solid var(--hypatia-border-light);
+}
+
+.hypatia-card__body {
+  padding: var(--hypatia-space-4);
+}
+
+.hypatia-card__footer {
+  padding: var(--hypatia-space-4);
+  border-top: 1px solid var(--hypatia-border-light);
+  background: var(--hypatia-bg-secondary);
+}
+
+/* =============================================================================
+   BADGE COMPONENT
+   ============================================================================= */
+
+.hypatia-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hypatia-space-1);
+  padding: var(--hypatia-space-1) var(--hypatia-space-2);
+  font-size: var(--hypatia-text-xs);
+  font-weight: var(--hypatia-font-medium);
+  line-height: 1;
+  border-radius: var(--hypatia-radius-full);
+  white-space: nowrap;
+}
+
+.hypatia-badge--default {
+  background: var(--hypatia-bg-tertiary);
+  color: var(--hypatia-text-secondary);
+}
+
+.hypatia-badge--primary {
+  background: var(--hypatia-accent-secondary);
+  color: var(--hypatia-accent-primary);
+}
+
+.hypatia-badge--success {
+  background: var(--hypatia-success-bg);
+  color: var(--hypatia-success);
+}
+
+.hypatia-badge--warning {
+  background: var(--hypatia-warning-bg);
+  color: var(--hypatia-warning);
+}
+
+.hypatia-badge--error {
+  background: var(--hypatia-error-bg);
+  color: var(--hypatia-error);
+}
+
+.hypatia-badge--info {
+  background: var(--hypatia-info-bg);
+  color: var(--hypatia-info);
+}
+
+/* =============================================================================
+   SPINNER COMPONENT
+   ============================================================================= */
+
+.hypatia-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--hypatia-border-light);
+  border-top-color: var(--hypatia-accent-primary);
+  border-radius: 50%;
+  animation: hypatia-spin 0.8s linear infinite;
+}
+
+.hypatia-spinner--sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+.hypatia-spinner--md {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+
+.hypatia-spinner--lg {
+  width: 32px;
+  height: 32px;
+  border-width: 3px;
+}
+
+@keyframes hypatia-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =============================================================================
+   MODAL COMPONENT
+   ============================================================================= */
+
+.hypatia-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--hypatia-z-modal-backdrop);
+  opacity: 0;
+  transition: opacity var(--hypatia-duration-slow) var(--hypatia-ease-default);
+}
+
+.hypatia-modal-backdrop--visible {
+  opacity: 1;
+}
+
+.hypatia-modal {
+  background: var(--hypatia-bg-primary);
+  border-radius: var(--hypatia-radius-xl);
+  box-shadow: var(--hypatia-shadow-xl);
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  transform: scale(0.95) translateY(10px);
+  transition: transform var(--hypatia-duration-slow) var(--hypatia-ease-out);
+  z-index: var(--hypatia-z-modal);
+}
+
+.hypatia-modal-backdrop--visible .hypatia-modal {
+  transform: scale(1) translateY(0);
+}
+
+.hypatia-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--hypatia-space-4) var(--hypatia-space-6);
+  border-bottom: 1px solid var(--hypatia-border-light);
+}
+
+.hypatia-modal__title {
+  font-size: var(--hypatia-text-lg);
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: var(--hypatia-radius-full);
+  color: var(--hypatia-text-secondary);
+  cursor: pointer;
+  transition: background var(--hypatia-duration-fast) var(--hypatia-ease-default);
+}
+
+.hypatia-modal__close:hover {
+  background: var(--hypatia-bg-hover);
+}
+
+.hypatia-modal__body {
+  padding: var(--hypatia-space-6);
+  overflow-y: auto;
+  max-height: calc(90vh - 140px);
+}
+
+.hypatia-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hypatia-space-3);
+  padding: var(--hypatia-space-4) var(--hypatia-space-6);
+  border-top: 1px solid var(--hypatia-border-light);
+  background: var(--hypatia-bg-secondary);
+}
+
+/* =============================================================================
+   AVATAR COMPONENT
+   ============================================================================= */
+
+.hypatia-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--hypatia-radius-full);
+  background: var(--hypatia-accent-secondary);
+  color: var(--hypatia-accent-primary);
+  font-size: var(--hypatia-text-sm);
+  font-weight: var(--hypatia-font-medium);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.hypatia-avatar--sm {
+  width: 28px;
+  height: 28px;
+  font-size: var(--hypatia-text-xs);
+}
+
+.hypatia-avatar--lg {
+  width: 48px;
+  height: 48px;
+  font-size: var(--hypatia-text-lg);
+}
+
+.hypatia-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* =============================================================================
+   EMPTY STATE
+   ============================================================================= */
+
+.hypatia-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--hypatia-space-10);
+  text-align: center;
+}
+
+.hypatia-empty-state__icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: var(--hypatia-space-4);
+  color: var(--hypatia-text-tertiary);
+}
+
+.hypatia-empty-state__title {
+  font-size: var(--hypatia-text-lg);
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-primary);
+  margin-bottom: var(--hypatia-space-2);
+}
+
+.hypatia-empty-state__description {
+  font-size: var(--hypatia-text-base);
+  color: var(--hypatia-text-secondary);
+  max-width: 320px;
+  margin-bottom: var(--hypatia-space-6);
+}
+
+/* =============================================================================
+   TABS COMPONENT
+   ============================================================================= */
+
+.hypatia-tabs {
+  display: flex;
+  gap: var(--hypatia-space-1);
+  border-bottom: 1px solid var(--hypatia-border-light);
+}
+
+.hypatia-tab {
+  position: relative;
+  padding: var(--hypatia-space-3) var(--hypatia-space-4);
+  font-size: var(--hypatia-text-sm);
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color var(--hypatia-duration-fast) var(--hypatia-ease-default);
+}
+
+.hypatia-tab:hover {
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-tab--active {
+  color: var(--hypatia-accent-primary);
+}
+
+.hypatia-tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--hypatia-accent-primary);
+  border-radius: var(--hypatia-radius-full) var(--hypatia-radius-full) 0 0;
+}
+
+.hypatia-tab__count {
+  margin-left: var(--hypatia-space-1);
+  font-size: var(--hypatia-text-xs);
+  color: var(--hypatia-text-tertiary);
+}
+
+.hypatia-tab--active .hypatia-tab__count {
+  color: var(--hypatia-accent-primary);
+}
+
+/* Pill Tabs Variant */
+.hypatia-pill-tabs {
+  display: flex;
+  gap: var(--hypatia-space-2);
+}
+
+.hypatia-pill-tab {
+  padding: var(--hypatia-space-1) var(--hypatia-space-3);
+  font-size: var(--hypatia-text-sm);
+  font-weight: var(--hypatia-font-medium);
+  border-radius: var(--hypatia-radius-full);
+  border: none;
+  cursor: pointer;
+  transition: all var(--hypatia-duration-fast) var(--hypatia-ease-default);
+  background: transparent;
+  color: var(--hypatia-text-secondary);
+}
+
+.hypatia-pill-tab:hover {
+  background: var(--hypatia-bg-hover);
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-pill-tab--active {
+  background: var(--hypatia-accent-secondary);
+  color: var(--hypatia-accent-primary);
+}
+
+.hypatia-pill-tab__count {
+  margin-left: var(--hypatia-space-1);
+}
+
+/* =============================================================================
+   SEARCH INPUT
+   ============================================================================= */
+
+.hypatia-search-input {
+  position: relative;
+}
+
+.hypatia-search-input__icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--hypatia-text-tertiary);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hypatia-search-input__field {
+  padding-left: 36px;
+}
+
+/* =============================================================================
+   ICON UTILITIES
+   ============================================================================= */
+
+.hypatia-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hypatia-icon--sm {
+  width: 16px;
+  height: 16px;
+}
+
+.hypatia-icon--md {
+  width: 20px;
+  height: 20px;
+}
+
+.hypatia-icon--lg {
+  width: 24px;
+  height: 24px;
+}
+
+.hypatia-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* =============================================================================
+   LAYOUT UTILITIES
+   ============================================================================= */
+
+.hypatia-flex {
+  display: flex;
+}
+
+.hypatia-flex-col {
+  flex-direction: column;
+}
+
+.hypatia-items-center {
+  align-items: center;
+}
+
+.hypatia-justify-center {
+  justify-content: center;
+}
+
+.hypatia-justify-between {
+  justify-content: space-between;
+}
+
+.hypatia-gap-1 { gap: var(--hypatia-space-1); }
+.hypatia-gap-2 { gap: var(--hypatia-space-2); }
+.hypatia-gap-3 { gap: var(--hypatia-space-3); }
+.hypatia-gap-4 { gap: var(--hypatia-space-4); }
+.hypatia-gap-6 { gap: var(--hypatia-space-6); }
+
+.hypatia-grid {
+  display: grid;
+}
+
+.hypatia-w-full {
+  width: 100%;
+}
+
+/* =============================================================================
+   TEXT UTILITIES
+   ============================================================================= */
+
+.hypatia-text-primary { color: var(--hypatia-text-primary); }
+.hypatia-text-secondary { color: var(--hypatia-text-secondary); }
+.hypatia-text-tertiary { color: var(--hypatia-text-tertiary); }
+
+.hypatia-text-xs { font-size: var(--hypatia-text-xs); }
+.hypatia-text-sm { font-size: var(--hypatia-text-sm); }
+.hypatia-text-base { font-size: var(--hypatia-text-base); }
+.hypatia-text-lg { font-size: var(--hypatia-text-lg); }
+.hypatia-text-xl { font-size: var(--hypatia-text-xl); }
+.hypatia-text-2xl { font-size: var(--hypatia-text-2xl); }
+
+.hypatia-font-normal { font-weight: var(--hypatia-font-normal); }
+.hypatia-font-medium { font-weight: var(--hypatia-font-medium); }
+.hypatia-font-semibold { font-weight: var(--hypatia-font-semibold); }
+
+.hypatia-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hypatia-line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

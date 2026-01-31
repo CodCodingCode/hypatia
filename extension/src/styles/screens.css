@@ -1,0 +1,878 @@
+/* =============================================================================
+   SCREEN-SPECIFIC STYLES
+   ============================================================================= */
+
+/* =============================================================================
+   PANEL LAYOUT
+   Matches Gmail's content area - NOT a fixed overlay
+   ============================================================================= */
+
+/* Root container - injected into Gmail's .nH.bkK */
+#hypatia-root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--hypatia-duration-slow) var(--hypatia-ease-default);
+  background: var(--hypatia-bg-primary, #ffffff);
+}
+
+#hypatia-root.hypatia-visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.hypatia-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--hypatia-bg-primary, #ffffff);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: auto;
+}
+
+.hypatia-panel__content {
+  width: 100%;
+  height: 100%;
+  padding: var(--hypatia-space-6) var(--hypatia-space-8);
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--hypatia-bg-primary, #ffffff);
+}
+
+.hypatia-panel__close {
+  position: absolute;
+  top: var(--hypatia-space-4);
+  right: var(--hypatia-space-4);
+  z-index: 10;
+}
+
+/* =============================================================================
+   SCREEN HEADER
+   ============================================================================= */
+
+.hypatia-screen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hypatia-space-4);
+  margin-bottom: var(--hypatia-space-6);
+  flex-wrap: wrap;
+}
+
+.hypatia-screen-header__left {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-3);
+}
+
+.hypatia-screen-header__right {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-2);
+}
+
+.hypatia-screen-title {
+  font-size: var(--hypatia-text-2xl);
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-primary);
+  margin: 0;
+}
+
+/* =============================================================================
+   SECTION LAYOUT
+   ============================================================================= */
+
+.hypatia-detail-section {
+  margin-bottom: var(--hypatia-space-6);
+}
+
+.hypatia-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--hypatia-space-3);
+}
+
+.hypatia-section-title {
+  font-size: var(--hypatia-text-lg);
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-primary);
+  margin: 0 0 var(--hypatia-space-4) 0;
+}
+
+/* =============================================================================
+   CAMPAIGNS SCREEN
+   ============================================================================= */
+
+.hypatia-campaigns-screen {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.hypatia-campaigns-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--hypatia-space-4);
+  margin-bottom: var(--hypatia-space-6);
+}
+
+.hypatia-campaign-card__status {
+  margin-bottom: var(--hypatia-space-3);
+}
+
+.hypatia-campaign-card__title {
+  font-size: var(--hypatia-text-base);
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-primary);
+  margin: 0 0 var(--hypatia-space-3) 0;
+  line-height: var(--hypatia-leading-snug);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hypatia-campaign-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-2);
+  margin-bottom: var(--hypatia-space-4);
+}
+
+.hypatia-campaign-card__stats {
+  display: flex;
+  gap: var(--hypatia-space-4);
+  padding-top: var(--hypatia-space-3);
+  border-top: 1px solid var(--hypatia-border-light);
+}
+
+.hypatia-campaign-card__stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hypatia-space-1);
+}
+
+.hypatia-campaign-card__actions {
+  margin-top: var(--hypatia-space-4);
+  opacity: 0;
+  transition: opacity var(--hypatia-duration-fast) var(--hypatia-ease-default);
+}
+
+.hypatia-card--interactive:hover .hypatia-campaign-card__actions {
+  opacity: 1;
+}
+
+.hypatia-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hypatia-space-4);
+}
+
+/* =============================================================================
+   CAMPAIGN DETAIL SCREEN
+   ============================================================================= */
+
+.hypatia-campaign-detail-screen {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.hypatia-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--hypatia-space-4);
+  margin-bottom: var(--hypatia-space-6);
+}
+
+.hypatia-stat-card {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-3);
+  padding: var(--hypatia-space-4);
+  background: var(--hypatia-bg-secondary);
+  border-radius: var(--hypatia-radius-lg);
+}
+
+.hypatia-stat-card--success {
+  background: var(--hypatia-success-bg);
+}
+
+.hypatia-stat-card__icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hypatia-bg-primary);
+  border-radius: var(--hypatia-radius-md);
+  color: var(--hypatia-text-secondary);
+}
+
+.hypatia-stat-card__value {
+  font-size: var(--hypatia-text-xl);
+  font-weight: var(--hypatia-font-semibold);
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-stat-card__label {
+  font-size: var(--hypatia-text-sm);
+  color: var(--hypatia-text-secondary);
+}
+
+.hypatia-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--hypatia-space-4);
+}
+
+.hypatia-analysis-card__icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hypatia-accent-secondary);
+  border-radius: var(--hypatia-radius-md);
+  color: var(--hypatia-accent-primary);
+  flex-shrink: 0;
+}
+
+.hypatia-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--hypatia-space-4);
+}
+
+.hypatia-action-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hypatia-space-3);
+}
+
+.hypatia-action-card__icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hypatia-accent-secondary);
+  border-radius: var(--hypatia-radius-md);
+  color: var(--hypatia-accent-primary);
+  flex-shrink: 0;
+}
+
+.hypatia-action-card__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.hypatia-action-card__title {
+  font-size: var(--hypatia-text-base);
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-primary);
+  margin: 0 0 var(--hypatia-space-1) 0;
+}
+
+/* =============================================================================
+   LEADS SCREEN
+   ============================================================================= */
+
+.hypatia-leads-screen {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.hypatia-leads-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hypatia-space-6);
+}
+
+.hypatia-leads-section {
+  margin-bottom: 0;
+}
+
+.hypatia-leads-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hypatia-space-2);
+  margin-top: var(--hypatia-space-3);
+}
+
+.hypatia-suggestion-chip {
+  padding: var(--hypatia-space-2) var(--hypatia-space-3);
+  font-size: var(--hypatia-text-sm);
+  color: var(--hypatia-text-secondary);
+  background: var(--hypatia-bg-secondary);
+  border: 1px solid var(--hypatia-border-light);
+  border-radius: var(--hypatia-radius-full);
+  cursor: pointer;
+  transition: all var(--hypatia-duration-fast) var(--hypatia-ease-default);
+}
+
+.hypatia-suggestion-chip:hover {
+  background: var(--hypatia-bg-tertiary);
+  border-color: var(--hypatia-border-default);
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-leads-generate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hypatia-space-4);
+  margin-top: var(--hypatia-space-4);
+}
+
+.hypatia-leads-limit {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-2);
+}
+
+.hypatia-select {
+  padding: var(--hypatia-space-2) var(--hypatia-space-3);
+  font-size: var(--hypatia-text-sm);
+  border: 1px solid var(--hypatia-border-default);
+  border-radius: var(--hypatia-radius-md);
+  background: var(--hypatia-bg-primary);
+  color: var(--hypatia-text-primary);
+  cursor: pointer;
+}
+
+.hypatia-manual-lead-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr auto;
+  gap: var(--hypatia-space-3);
+  align-items: end;
+}
+
+.hypatia-leads-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hypatia-space-2);
+}
+
+.hypatia-lead-row {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-3);
+  padding: var(--hypatia-space-3);
+  background: var(--hypatia-bg-primary);
+  border: 1px solid var(--hypatia-border-light);
+  border-radius: var(--hypatia-radius-md);
+  transition: all var(--hypatia-duration-fast) var(--hypatia-ease-default);
+}
+
+.hypatia-lead-row:hover {
+  border-color: var(--hypatia-border-default);
+}
+
+.hypatia-lead-row--selected {
+  background: var(--hypatia-accent-secondary);
+  border-color: var(--hypatia-accent-primary);
+}
+
+.hypatia-lead-row__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.hypatia-lead-row__name {
+  font-weight: var(--hypatia-font-medium);
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-lead-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-2);
+}
+
+.hypatia-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--hypatia-accent-primary);
+}
+
+.hypatia-link-icon {
+  color: var(--hypatia-text-tertiary);
+  transition: color var(--hypatia-duration-fast);
+}
+
+.hypatia-link-icon:hover {
+  color: var(--hypatia-accent-primary);
+}
+
+.hypatia-leads-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--hypatia-space-4);
+  background: var(--hypatia-bg-secondary);
+  border-radius: var(--hypatia-radius-lg);
+  margin-top: var(--hypatia-space-4);
+}
+
+/* =============================================================================
+   TEMPLATE EDITOR SCREEN
+   ============================================================================= */
+
+.hypatia-template-screen {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.hypatia-template-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--hypatia-space-6);
+  flex: 1;
+  min-height: 0;
+}
+
+.hypatia-template-editor,
+.hypatia-template-preview {
+  display: flex;
+  flex-direction: column;
+}
+
+.hypatia-template-field {
+  margin-bottom: var(--hypatia-space-4);
+}
+
+.hypatia-template-variables {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-2);
+  flex-wrap: wrap;
+  margin-top: var(--hypatia-space-4);
+  padding-top: var(--hypatia-space-4);
+  border-top: 1px solid var(--hypatia-border-light);
+}
+
+.hypatia-variable-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hypatia-space-2);
+}
+
+.hypatia-variable-chip {
+  padding: var(--hypatia-space-1) var(--hypatia-space-2);
+  font-size: var(--hypatia-text-xs);
+  font-family: var(--hypatia-font-mono);
+  color: var(--hypatia-accent-primary);
+  background: var(--hypatia-accent-secondary);
+  border: none;
+  border-radius: var(--hypatia-radius-sm);
+  cursor: pointer;
+  transition: background var(--hypatia-duration-fast);
+}
+
+.hypatia-variable-chip:hover {
+  background: var(--hypatia-accent-secondary-hover);
+}
+
+.hypatia-variable-chip--small {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+
+.hypatia-template-style-info {
+  display: flex;
+  gap: var(--hypatia-space-2);
+  margin-top: var(--hypatia-space-4);
+  padding: var(--hypatia-space-3);
+  background: var(--hypatia-bg-secondary);
+  border-radius: var(--hypatia-radius-md);
+}
+
+.hypatia-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--hypatia-space-4);
+}
+
+.hypatia-preview-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-2);
+}
+
+.hypatia-preview-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-3);
+  padding: var(--hypatia-space-3);
+  background: var(--hypatia-bg-secondary);
+  border-radius: var(--hypatia-radius-md);
+  margin-bottom: var(--hypatia-space-4);
+}
+
+.hypatia-email-preview {
+  border: 1px solid var(--hypatia-border-light);
+  border-radius: var(--hypatia-radius-md);
+  overflow: hidden;
+}
+
+.hypatia-email-preview__header {
+  padding: var(--hypatia-space-3);
+  background: var(--hypatia-bg-secondary);
+  border-bottom: 1px solid var(--hypatia-border-light);
+}
+
+.hypatia-email-preview__to,
+.hypatia-email-preview__subject {
+  display: flex;
+  gap: var(--hypatia-space-2);
+  font-size: var(--hypatia-text-sm);
+  margin-bottom: var(--hypatia-space-1);
+}
+
+.hypatia-email-preview__body {
+  padding: var(--hypatia-space-4);
+  font-size: var(--hypatia-text-sm);
+  line-height: var(--hypatia-leading-relaxed);
+  white-space: pre-wrap;
+  min-height: 200px;
+}
+
+.hypatia-template-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--hypatia-space-3);
+  padding: var(--hypatia-space-4) 0;
+  margin-top: auto;
+}
+
+/* =============================================================================
+   SENT EMAILS SCREEN
+   ============================================================================= */
+
+.hypatia-sent-screen {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.hypatia-sent-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--hypatia-space-4);
+  margin-bottom: var(--hypatia-space-6);
+}
+
+.hypatia-sent-stat-card {
+  text-align: center;
+  padding: var(--hypatia-space-4);
+  background: var(--hypatia-bg-secondary);
+  border-radius: var(--hypatia-radius-lg);
+}
+
+.hypatia-sent-stat-card--success {
+  background: var(--hypatia-success-bg);
+}
+
+.hypatia-sent-stat-card--primary {
+  background: var(--hypatia-accent-secondary);
+}
+
+.hypatia-sent-stat-card--error {
+  background: var(--hypatia-error-bg);
+}
+
+.hypatia-sent-stat-card__value {
+  font-size: var(--hypatia-text-2xl);
+  font-weight: var(--hypatia-font-semibold);
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-sent-stat-card__label {
+  font-size: var(--hypatia-text-sm);
+  color: var(--hypatia-text-secondary);
+  margin-bottom: var(--hypatia-space-1);
+}
+
+.hypatia-sent-stat-card__percentage {
+  font-size: var(--hypatia-text-xs);
+  color: var(--hypatia-text-tertiary);
+}
+
+.hypatia-sent-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hypatia-space-3);
+  margin-top: var(--hypatia-space-4);
+}
+
+.hypatia-email-card {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-3);
+}
+
+.hypatia-email-card__status {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--hypatia-radius-full);
+  font-size: var(--hypatia-text-sm);
+  flex-shrink: 0;
+}
+
+.hypatia-email-card__status--delivered {
+  background: var(--hypatia-success-bg);
+  color: var(--hypatia-success);
+}
+
+.hypatia-email-card__status--opened {
+  background: var(--hypatia-accent-secondary);
+  color: var(--hypatia-accent-primary);
+}
+
+.hypatia-email-card__status--replied {
+  background: var(--hypatia-success-bg);
+  color: var(--hypatia-success);
+}
+
+.hypatia-email-card__status--bounced {
+  background: var(--hypatia-error-bg);
+  color: var(--hypatia-error);
+}
+
+.hypatia-email-card__status--pending {
+  background: var(--hypatia-warning-bg);
+  color: var(--hypatia-warning);
+}
+
+.hypatia-email-card__recipient {
+  min-width: 150px;
+}
+
+.hypatia-email-card__subject {
+  flex: 1;
+  min-width: 0;
+  color: var(--hypatia-text-primary);
+}
+
+.hypatia-email-card__dates {
+  min-width: 120px;
+  text-align: right;
+}
+
+.hypatia-email-card__actions {
+  display: flex;
+  gap: var(--hypatia-space-1);
+}
+
+/* =============================================================================
+   GENERATING SCREEN
+   ============================================================================= */
+
+.hypatia-generating-screen {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.hypatia-generating-header {
+  text-align: center;
+  margin-bottom: var(--hypatia-space-8);
+}
+
+.hypatia-generating-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--hypatia-space-4);
+  flex: 1;
+}
+
+.hypatia-generating-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--hypatia-space-4);
+}
+
+.hypatia-generating-section__content {
+  min-height: 200px;
+}
+
+.hypatia-generating-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hypatia-space-4);
+  padding: var(--hypatia-space-8);
+}
+
+.hypatia-generating-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--hypatia-space-3);
+  padding: var(--hypatia-space-6);
+  text-align: center;
+}
+
+.hypatia-generating-error__icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hypatia-error-bg);
+  color: var(--hypatia-error);
+  border-radius: var(--hypatia-radius-full);
+  font-size: var(--hypatia-text-xl);
+  font-weight: var(--hypatia-font-bold);
+}
+
+.hypatia-generating-leads__header {
+  margin-bottom: var(--hypatia-space-3);
+}
+
+.hypatia-generating-leads__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hypatia-space-2);
+}
+
+.hypatia-generating-lead-item {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-2);
+  padding: var(--hypatia-space-2);
+  background: var(--hypatia-bg-secondary);
+  border-radius: var(--hypatia-radius-md);
+}
+
+.hypatia-generating-lead-item .hypatia-link {
+  margin-left: auto;
+}
+
+.hypatia-generating-template__subject {
+  display: flex;
+  gap: var(--hypatia-space-2);
+  margin-bottom: var(--hypatia-space-3);
+  font-size: var(--hypatia-text-sm);
+}
+
+.hypatia-generating-template__body {
+  font-size: var(--hypatia-text-sm);
+  color: var(--hypatia-text-secondary);
+  line-height: var(--hypatia-leading-relaxed);
+  margin-bottom: var(--hypatia-space-3);
+}
+
+.hypatia-generating-template__variables {
+  display: flex;
+  gap: var(--hypatia-space-1);
+}
+
+.hypatia-cadence-step {
+  display: flex;
+  align-items: center;
+  gap: var(--hypatia-space-3);
+  padding: var(--hypatia-space-3);
+  background: var(--hypatia-bg-secondary);
+  border-radius: var(--hypatia-radius-md);
+  margin-bottom: var(--hypatia-space-2);
+}
+
+.hypatia-cadence-step__day {
+  flex-shrink: 0;
+}
+
+.hypatia-cadence-step__content {
+  flex: 1;
+}
+
+.hypatia-generating-footer {
+  display: flex;
+  justify-content: center;
+  padding: var(--hypatia-space-6) 0;
+  margin-top: auto;
+}
+
+/* =============================================================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================================================= */
+
+@media (max-width: 900px) {
+  .hypatia-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .hypatia-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hypatia-actions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hypatia-template-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .hypatia-sent-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .hypatia-generating-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hypatia-manual-lead-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .hypatia-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hypatia-sent-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .hypatia-email-card {
+    flex-wrap: wrap;
+  }
+
+  .hypatia-email-card__subject {
+    width: 100%;
+    order: 10;
+    margin-top: var(--hypatia-space-2);
+  }
+
+  .hypatia-manual-lead-form {
+    grid-template-columns: 1fr;
+  }
+}

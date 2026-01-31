@@ -743,15 +743,26 @@ function getCampaignsStep() {
       const firstEmail = campaignEmails[0] || campaign.representative_recipient || '';
 
       return `
-      <div class="hypatia-campaign-card" data-campaign-id="${campaign.id || globalIdx}" data-emails='${emailsDataAttr}'>
-        <div class="hypatia-campaign-card-header">
+      <div class="hypatia-campaign-row" data-campaign-id="${campaign.id || globalIdx}" data-emails='${emailsDataAttr}'>
+        <div class="hypatia-campaign-row-count">
           <span class="hypatia-campaign-count">${campaign.email_count}</span>
         </div>
-        <div class="hypatia-campaign-card-title">${escapeHtml(truncate(campaign.representative_subject || 'Untitled', 50))}</div>
-        <div class="hypatia-campaign-card-recipient-cycling">
-          <span class="hypatia-cycling-email">${escapeHtml(firstEmail)}</span>
+        <div class="hypatia-campaign-row-main">
+          <div class="hypatia-campaign-row-title">${escapeHtml(truncate(campaign.representative_subject || 'Untitled', 60))}</div>
+          <div class="hypatia-campaign-row-recipient">
+            <span class="hypatia-cycling-email">${escapeHtml(firstEmail)}</span>
+          </div>
         </div>
-        ${analysisHtml}
+        <div class="hypatia-campaign-row-details">
+          ${campaign.contact_description ? `<div class="hypatia-row-detail"><strong>Who:</strong> ${escapeHtml(truncate(campaign.contact_description, 60))}</div>` : ''}
+          ${campaign.style_description ? `<div class="hypatia-row-detail"><strong>Style:</strong> ${escapeHtml(truncate(campaign.style_description, 60))}</div>` : ''}
+          ${campaign.cta_type ? `<div class="hypatia-row-detail"><strong>Ask:</strong> ${escapeHtml(truncate(campaign.cta_description || campaign.cta_type, 60))}</div>` : ''}
+        </div>
+        <div class="hypatia-campaign-row-arrow">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </div>
       </div>`;
     }).join('');
   }
@@ -794,7 +805,7 @@ function getCampaignsStep() {
         </div>
       </div>
 
-      <div class="hypatia-campaigns-grid">
+      <div class="hypatia-campaigns-list">
         ${campaignCardsHtml}
       </div>
 
@@ -951,9 +962,9 @@ function startEmailCycling() {
   // Clear any existing intervals
   stopEmailCycling();
 
-  const cards = document.querySelectorAll('.hypatia-campaign-card');
-  cards.forEach((card, cardIndex) => {
-    const emailsData = card.getAttribute('data-emails');
+  const rows = document.querySelectorAll('.hypatia-campaign-row');
+  rows.forEach((row, rowIndex) => {
+    const emailsData = row.getAttribute('data-emails');
     if (!emailsData) return;
 
     let emails;
@@ -966,11 +977,11 @@ function startEmailCycling() {
     if (!emails || emails.length <= 1) return;
 
     let currentIndex = 0;
-    const emailSpan = card.querySelector('.hypatia-cycling-email');
+    const emailSpan = row.querySelector('.hypatia-cycling-email');
     if (!emailSpan) return;
 
-    // Stagger the start of each card's animation
-    const staggerDelay = cardIndex * 500;
+    // Stagger the start of each row's animation
+    const staggerDelay = rowIndex * 500;
 
     setTimeout(() => {
       const interval = setInterval(() => {
@@ -2949,12 +2960,12 @@ function attachEventListeners() {
     });
   });
 
-  // Campaign card clicks (only for actual campaign cards, not lead/template cards in list views)
-  const campaignCards = document.querySelectorAll('.hypatia-campaign-card:not(.hypatia-lead-card):not(.hypatia-template-card)');
-  campaignCards.forEach(card => {
-    card.addEventListener('click', () => {
-      stopEmailCycling(); // Stop cycling when clicking a card
-      const campaignId = card.dataset.campaignId;
+  // Campaign row clicks (campaigns list view)
+  const campaignRows = document.querySelectorAll('.hypatia-campaign-row');
+  campaignRows.forEach(row => {
+    row.addEventListener('click', () => {
+      stopEmailCycling(); // Stop cycling when clicking a row
+      const campaignId = row.dataset.campaignId;
       handleCampaignCardClick(campaignId);
     });
   });

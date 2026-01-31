@@ -616,7 +616,7 @@
   box-shadow: 0 2px 8px rgba(66, 133, 244, 0.3);
 }
 
-/* Grid layout for campaign cards */
+/* Grid layout for campaign cards (legacy, used by leads/templates) */
 .hypatia-campaigns-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -627,6 +627,113 @@
   align-content: stretch;
   min-height: 0;
   overflow: hidden;
+}
+
+/* List layout for campaigns */
+.hypatia-campaigns-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Campaign row item */
+.hypatia-campaign-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  background: white;
+  border: 1px solid #e8eaed;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.hypatia-campaign-row:hover {
+  background-color: #f8f9fa;
+  border-color: #dadce0;
+}
+
+.hypatia-campaign-row-count {
+  flex-shrink: 0;
+}
+
+.hypatia-campaign-row-count .hypatia-campaign-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 28px;
+  padding: 0 10px;
+  background: #1a73e8;
+  color: white;
+  border-radius: 14px;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.hypatia-campaign-row-main {
+  flex: 0 0 260px;
+  min-width: 0;
+}
+
+.hypatia-campaign-row-title {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #202124;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.hypatia-campaign-row-recipient {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #5f6368;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hypatia-campaign-row-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hypatia-row-detail {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #5f6368;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hypatia-row-detail strong {
+  color: #3c4043;
+  font-weight: 500;
+}
+
+.hypatia-campaign-row-arrow {
+  flex-shrink: 0;
+  color: #9aa0a6;
+  display: flex;
+  align-items: center;
+}
+
+.hypatia-campaign-row:hover .hypatia-campaign-row-arrow {
+  color: #5f6368;
 }
 
 /* Campaign Group Styling (for leads/templates grouped by campaign) */
@@ -4107,4 +4214,51 @@
   border-color: #4285f4;
   color: #1a73e8;
   font-weight: 500;
+}
+
+/* =============================================================================
+   CHAT INTENT CHIPS (Groq Analysis - Sidebar Chat)
+   ============================================================================= */
+
+.hypatia-intent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+
+.hypatia-intent-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: #f1f3f4;
+  border: 1px solid #e8eaed;
+  border-radius: 14px;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 11px;
+  color: #80868b;
+  transition: all 0.25s ease;
+}
+
+.hypatia-intent-chip.active {
+  background: #e8f0fe;
+  border-color: #4285f4;
+  color: #1a73e8;
+  font-weight: 500;
+  box-shadow: 0 0 8px rgba(66, 133, 244, 0.4);
+}
+
+/* Dark mode support */
+[data-hypatia-theme="dark"] .hypatia-intent-chip {
+  background: #3c4043;
+  border-color: #5f6368;
+  color: #9aa0a6;
+}
+
+[data-hypatia-theme="dark"] .hypatia-intent-chip.active {
+  background: #1a3a5c;
+  border-color: #8ab4f8;
+  color: #8ab4f8;
+  box-shadow: 0 0 8px rgba(138, 180, 248, 0.4);
 }
